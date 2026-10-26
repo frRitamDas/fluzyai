@@ -63,23 +63,23 @@ const FEATURES = [
   },
   {
     icon: ShieldCheck,
-    title: 'One key to hand out',
-    body: 'Clients authenticate with a single unified key. Rotate it in the dashboard and every app keeps working.',
+    title: 'A key per account',
+    body: 'Every account gets its own /v1 key. Rotate yours and only your clients change — nobody else on the deployment notices.',
   },
 ]
 
 const STEPS = [
   {
     title: 'Create your account',
-    body: 'This dashboard is yours alone; the account you create is the only one that can reach it.',
+    body: 'One account per person, with its own API key. Provider keys are shared and managed by the deployment admin, so every model is available to you on day one.',
   },
   {
-    title: 'Add provider keys',
-    body: 'Paste the free-tier keys you already have. Fluzy AI verifies each one and learns the models it serves.',
+    title: 'Call every model',
+    body: 'The admin adds the free-tier provider keys once — Fluzy AI verifies each and learns the models it serves — and they are live for every account. Hosting it yourself? You are the admin.',
   },
   {
     title: 'Point your client at /v1',
-    body: 'Use the unified key from the dashboard anywhere an OpenAI base URL is accepted.',
+    body: 'Use your key from the dashboard anywhere an OpenAI base URL is accepted.',
   },
 ]
 
