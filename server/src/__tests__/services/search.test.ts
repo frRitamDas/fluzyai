@@ -251,7 +251,7 @@ describe('search service', () => {
       expect((init.headers as Record<string, string>)['x-api-key']).toBeUndefined();
       const body = bodyOf(calls(fn)[0]);
       expect(body).toMatchObject({ method: 'tools/call', params: { name: 'web_search', arguments: { objective: 'node version', search_queries: ['node version'] } } });
-      expect(body.params.arguments.session_id).toMatch(/^freellmapi-/);
+      expect(body.params.arguments.session_id).toMatch(/^fluzyai-/);
       expect(out).toMatchObject({ provider: 'parallel', engine: 'parallel-search' });
       expect(out.results).toEqual([
         { title: 'A & B', url: 'https://a', content: 'one … two', score: 1 },
@@ -324,7 +324,7 @@ describe('search service', () => {
       const out = await runSearch('node version');
       const [url, init] = calls(fn)[0];
       expect(url).toBe('https://api.keenable.ai/v1/search/public');
-      expect((init.headers as Record<string, string>)['X-Keenable-Title']).toBe('freellmapi');
+      expect((init.headers as Record<string, string>)['X-Keenable-Title']).toBe('fluzyai');
       expect((init.headers as Record<string, string>)['X-API-Key']).toBeUndefined();
       expect(bodyOf(calls(fn)[0])).toEqual({ query: 'node version', max_results: 5 });
       expect(out).toMatchObject({ provider: 'keenable', engine: 'keenable-search' });

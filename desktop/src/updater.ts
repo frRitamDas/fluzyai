@@ -21,7 +21,7 @@ export type { UpdateState };
 
 const { autoUpdater } = electronUpdater;
 
-const RELEASES_URL = 'https://github.com/tashfeenahmed/freellmapi/releases/latest';
+const RELEASES_URL = 'https://github.com/frRitamDas/fluzyai/releases/latest';
 const BACKGROUND_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const FIRST_BACKGROUND_CHECK_MS = 60 * 1000;
 
@@ -63,7 +63,7 @@ export function getUpdateState(): UpdateState {
 function setState(next: UpdateState): void {
   state = next;
   for (const window of BrowserWindow.getAllWindows()) {
-    if (!window.isDestroyed()) window.webContents.send('freeapi:update-state', state);
+    if (!window.isDestroyed()) window.webContents.send('fluzyai:update-state', state);
   }
   hooks?.onChange?.(state);
 }
@@ -97,7 +97,7 @@ export function initUpdater(options: UpdaterHooks): void {
     platform: process.platform,
     execPath: process.execPath,
     appImage: process.env.APPIMAGE,
-    feed: process.env.FREEAPI_UPDATE_FEED,
+    feed: process.env.FLUZY_UPDATE_FEED,
     productName: app.getName(),
   });
   if (unsupported) {
@@ -105,9 +105,9 @@ export function initUpdater(options: UpdaterHooks): void {
     return;
   }
 
-  if (process.env.FREEAPI_UPDATE_FEED) {
+  if (process.env.FLUZY_UPDATE_FEED) {
     autoUpdater.forceDevUpdateConfig = true;
-    autoUpdater.setFeedURL({ provider: 'generic', url: process.env.FREEAPI_UPDATE_FEED });
+    autoUpdater.setFeedURL({ provider: 'generic', url: process.env.FLUZY_UPDATE_FEED });
   }
   autoUpdater.logger = console;
   autoUpdater.autoDownload = false;

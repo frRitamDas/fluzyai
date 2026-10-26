@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Fluzy AI — one OpenAI-compatible endpoint for dozens of free LLM providers. Built by Ritam Das." />
+    <meta name="author" content="Ritam Das" />
+    <meta name="application-name" content="Fluzy AI" />
+    <meta property="og:title" content="Fluzy AI" />
+    <meta property="og:description" content="Unified free LLM router — one key, every free provider. Built by Ritam Das." />
+    <meta name="theme-color" content="#0b0b0c" />
     <script>
       try {
         // Mirrors the ThemeProvider's resolution: 'system' (or nothing stored)
@@ -19,7 +25,7 @@
           theme === 'dark' || theme === 'light' ? theme : 'system'
         // Same idea for text direction; keep in sync with RTL_LOCALES in
         // src/i18n/locale-config.ts.
-        const locale = localStorage.getItem('freellmapi.locale')
+        const locale = localStorage.getItem('fluzyai.locale')
         if (locale && ['ar', 'he', 'fa', 'ur'].includes(locale)) {
           document.documentElement.dir = 'rtl'
         }
@@ -27,7 +33,7 @@
         // Keep the initial render working if localStorage is unavailable.
       }
     </script>
-    <title>FreeLLMAPI · Unified LLM Router</title>
+    <title>Fluzy AI · Unified LLM Router</title>
   </head>
   <body>
     <div id="root"></div>

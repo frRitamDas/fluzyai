@@ -1,5 +1,5 @@
 {
-  "name": "@freellmapi/monorepo",
+  "name": "@fluzyai/monorepo",
   "private": true,
   "workspaces": [
     "shared",
@@ -26,19 +26,22 @@
     "db:migration:down": "npm run db:migration:down -w server",
     "db:migration:fresh": "npm run db:migration:fresh -w server",
     "db:migration:status": "npm run db:migration:status -w server",
-    "db:migration:create": "npm run db:migration:create -w server"
+    "db:migration:create": "npm run db:migration:create -w server",
+    "vercel-build": "node scripts/build-vercel.mjs",
+    "build:vercel": "node scripts/build-vercel.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
     "jsdom": "^27.4.0"
   },
   "engines": {
-    "node": ">=20.18.0 <25.0.0",
+    "node": "22.x || 24.x",
     "npm": ">=10.0.0"
   },
   "allowScripts": {
     "better-sqlite3@12.10.0": true,
     "esbuild@0.28.2": true,
     "msw@2.14.6": true
-  }
+  },
+  "author": "Ritam Das (https://github.com/frRitamDas)"
 }

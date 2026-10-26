@@ -1,5 +1,5 @@
-appId: com.freellmapi.desktop
-productName: FreeLLMAPI
+appId: com.fluzyai.desktop
+productName: Fluzy AI
 directories:
   output: dist-electron
 files:
@@ -16,8 +16,8 @@ files:
 # attaches the files itself. See #703.
 publish:
   provider: github
-  owner: tashfeenahmed
-  repo: freellmapi
+  owner: frRitamDas
+  repo: fluzyai
 asar: true
 # Linux chrome-sandbox must be mode 4755 (setuid) in the .deb; otherwise
 # Electron aborts at launch (#1229). Path is relative to desktop/.
@@ -88,7 +88,7 @@ linux:
       arch:
         - x64
 nsis:
-  # electron-builder's default NSIS name has spaces ("FreeLLMAPI Setup x.y.z.exe")
+  # electron-builder's default NSIS name has spaces ("Fluzy AI Setup x.y.z.exe")
   # and latest.yml records it with dashes, while GitHub stores the upload with
   # dots — so the updater asked for a file the release did not have. A name with
   # no spaces is the same string in all three places.

@@ -82,7 +82,7 @@ export function loadConfig(): Config {
     // and IPv6 (e.g. IPv6-enabled Docker networks — #180). Hosts with IPv6
     // disabled fall back to IPv4-only below; HOST overrides the default outright.
     host: process.env.HOST ?? '::',
-    dbPath: process.env.FREEAPI_DB_PATH?.trim() || null,
+    dbPath: process.env.FLUZY_DB_PATH?.trim() || null,
     dashboardOrigins: (process.env.DASHBOARD_ORIGINS ?? '')
       .split(',')
       .map(s => s.trim())
@@ -91,7 +91,10 @@ export function loadConfig(): Config {
     proxyRateLimitRpm: parseRateLimitRpm(),
     requestBodyLimitBytes: parseRequestBodyLimitBytes(),
     nodeEnv: process.env.NODE_ENV ?? 'development',
-    serveStaticAssets: true,
+    // Serverless platforms serve the dashboard from their static CDN and route
+    // only API/proxy paths to this process; FLUZY_SERVE_STATIC=0 says so. The
+    // default stays on, which is what self-hosted installs rely on.
+    serveStaticAssets: parseServeStatic(),
     trustProxy: parseTrustProxy(),
     // CSP_UPGRADE_INSECURE_REQUESTS: true|false forces the directive on/off;
     // unset (the default) leaves it on auto — emit only when the request is
@@ -131,6 +134,14 @@ function parseTrustProxy(): boolean | number | string[] {
   }
   const addrs = raw.split(',').map(s => s.trim()).filter(Boolean);
   return addrs.length > 0 ? addrs : false;
+}
+
+// FLUZY_SERVE_STATIC: 0/false disables Express static + SPA fallback handling
+// (a platform CDN is serving client/dist instead). Unset keeps it on.
+function parseServeStatic(): boolean {
+  const raw = process.env.FLUZY_SERVE_STATIC?.trim().toLowerCase();
+  if (raw === undefined || raw === '') return true;
+  return !(raw === '0' || raw === 'false' || raw === 'off' || raw === 'no');
 }
 
 function parseCspUpgradeInsecureRequests(): boolean | undefined {

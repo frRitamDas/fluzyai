@@ -1,4 +1,4 @@
-import type { ChatCompletionChunk, ChatCompletionResponse } from '@freellmapi/shared/types.js';
+import type { ChatCompletionChunk, ChatCompletionResponse } from '@fluzyai/shared/types.js';
 import { BaseProvider, providerHttpError, type KeyValidationResult } from './base.js';
 
 export const BEATAPI_BASE_URL = 'https://api.beatapi.io/v1';

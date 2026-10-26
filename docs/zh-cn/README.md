@@ -1,6 +1,6 @@
 [English](../en/README.md) · **简体中文**
 
-# FreeLLMAPI 文档
+# Fluzy AI 文档
 
 这里是用户入口 —— 从这里开始安装网关、调用兼容 OpenAI 的 API、接入编程智能体并了解整体架构。根目录的 [README](../../README.zh-cn.md) 是产品总览；这份索引帮你把服务跑起来。
 
@@ -10,7 +10,7 @@
 
 - **[安装与部署](install/01-install.md)** —— 快速开始、Docker Compose、本地开发、声明式启动配置、Docker 镜像、备份、桌面应用、数据存放位置，以及关于密码重置、日志和卸载的常见问题。
 - **[API 参考](api/01-rest-api.md)** —— 聊天补全、`auto:*` 路由策略、流式、工具调用、视觉、Gemini 的 Google 搜索接地、嵌入、响应头，以及 Anthropic Messages 接口。
-- **[支持的智能体](clients/02-supported-agents.md)** —— FreeLLMAPI 支持的全部智能体及其一行配置命令。
+- **[支持的智能体](clients/02-supported-agents.md)** —— Fluzy AI 支持的全部智能体及其一行配置命令。
 - **[客户端与编程智能体](clients/01-agent-clients.md)** —— 兼容 OpenAI 的客户端，Claude Code / Codex CLI / Cline / Continue / Aider / opencode / Cursor 的配方，MCP 服务，编辑器补全，以及上下文交接。
 - **[提示词压缩](compression/01-compression-pipeline.md)** —— 请求侧的各种模式、安全保护、按请求的控制项、自定义工具输出过滤器、统计数据和预览 API。
 - **[代理传输](proxy/OVERVIEW.md)** —— 出站代理传输：正向代理与 Fetch Relay、系统自动检测、入站的 `TRUST_PROXY`；中继协议与 Cloudflare Worker 参考实现见 [Fetch Relay 传输](proxy/01-fetch-relay.md)。

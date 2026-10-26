@@ -1,0 +1,27 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "npm install --no-audit --no-fund",
+  "buildCommand": "npm run vercel-build",
+  "outputDirectory": "client/dist",
+  "functions": {
+    "api/index.mjs": {
+      "maxDuration": 60,
+      "memory": 1024,
+      "includeFiles": "server/dist/serverless-bundle.mjs"
+    }
+  },
+  "rewrites": [
+    { "source": "/api", "destination": "/api/index?__fluzy_path=/api" },
+    { "source": "/api/(.*)", "destination": "/api/index?__fluzy_path=/api/$1" },
+    { "source": "/v1", "destination": "/api/index?__fluzy_path=/v1" },
+    { "source": "/v1/(.*)", "destination": "/api/index?__fluzy_path=/v1/$1" },
+    { "source": "/v1beta", "destination": "/api/index?__fluzy_path=/v1beta" },
+    { "source": "/v1beta/(.*)", "destination": "/api/index?__fluzy_path=/v1beta/$1" },
+    { "source": "/mcp", "destination": "/api/index?__fluzy_path=/mcp" },
+    { "source": "/mcp/(.*)", "destination": "/api/index?__fluzy_path=/mcp/$1" },
+    { "source": "/livez", "destination": "/api/index?__fluzy_path=/livez" },
+    { "source": "/readyz", "destination": "/api/index?__fluzy_path=/readyz" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

@@ -47,7 +47,7 @@
 `/v1/models` 目录，先备份现有配置再合并写入，你的其他服务商配置保持不变：
 
 ```bash
-npx freellmapi setup-<agent> --url http://localhost:3001 --api-key <unified-key>
+npx fluzyai setup-<agent> --url http://localhost:3001 --api-key <unified-key>
 ```
 
 加 `--dry-run` 先查看差异，`--profile <name>` 新增一个条目而不改动默认设置，
