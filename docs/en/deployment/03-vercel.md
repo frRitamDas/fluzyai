@@ -13,7 +13,7 @@ adapter rather than a rewrite of the app:
 | Database file | `server/data/fluzyai.db` | `/tmp/fluzyai/fluzyai.db`, restored/uploaded through Supabase Storage |
 | SQLite driver | `better-sqlite3` | built-in `node:sqlite` (`FLUZY_DB_DRIVER=node`) |
 | Background schedulers | health checks, catalog sync, backups | not started — the platform calls in per request |
-| First-run code | printed in the boot log | pinned via `FLUZY_SETUP_CODE` |
+| First dashboard account | created in the browser | declared with `FLUZY_ADMIN_EMAIL` + `FLUZY_ADMIN_PASSWORD` at boot (or the `FLUZY_SETUP_CODE` fallback) |
 
 Every router, middleware, auth rule and routing decision is the same code the
 self-hosted server runs; the adapter only decides where the bytes live.
@@ -56,7 +56,9 @@ directory), then set these for Production *and* Preview:
 | Variable | Value | Why |
 | --- | --- | --- |
 | `ENCRYPTION_KEY` | 64 hex chars (`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`) | Encrypts provider keys. **Required in production.** Losing it makes stored keys unreadable. |
-| `FLUZY_SETUP_CODE` | ≥ 8 characters you choose | Creates the first dashboard account from a remote browser. |
+| `FLUZY_ADMIN_EMAIL` | your email | With the password below, creates the dashboard account at boot — the install is claimed before the first request, so there is no setup form and no code to copy. |
+| `FLUZY_ADMIN_PASSWORD` | ≥ 8 characters you choose | Password for `FLUZY_ADMIN_EMAIL`. Hashed at rest, never logged; an existing account is never overwritten. |
+| `FLUZY_SETUP_CODE` | ≥ 8 characters you choose | Fallback only (no `FLUZY_ADMIN_*` set): the code the first-run form asks for when the account is created from a remote browser. |
 | `FLUZY_DB_PATH` | `/tmp/fluzyai/fluzyai.db` | Only writable path on a function. |
 | `FLUZY_DB_DRIVER` | `node` | Uses `node:sqlite`; no native module to compile. |
 | `FLUZY_SERVE_STATIC` | `0` | The CDN serves `client/dist`. |
@@ -83,9 +85,12 @@ the deployment answers on `https://fluzyaiorg.vercel.app`.
 
 Then:
 
-1. Open the deployment URL.
-2. Create the dashboard account, entering `FLUZY_SETUP_CODE` when asked.
-3. Add provider keys on **Keys** in the dashboard.
+1. Open the deployment URL. With `FLUZY_ADMIN_EMAIL` and `FLUZY_ADMIN_PASSWORD`
+   set the account already exists and the dashboard asks you to **sign in**.
+   Without them, the first-run form asks for an email, a password and — because
+   the request comes from a remote browser — the `FLUZY_SETUP_CODE` (the field is
+   shown from the start, so nothing is submitted blindly).
+2. Add provider keys on **Keys** in the dashboard.
 4. Point any OpenAI-compatible client at `https://<deployment>/v1` with the
    unified key from the Keys page.
 

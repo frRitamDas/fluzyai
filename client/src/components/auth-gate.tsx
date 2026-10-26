@@ -42,6 +42,9 @@ async function browserDesktopSession(): Promise<string> {
 
 interface AuthStatus {
   needsSetup: boolean
+  // A remote browser would be stopped by the one-time setup code, so the form
+  // asks for it alongside the credentials instead of after a rejected submit.
+  setupCodeRequired?: boolean
   authenticated: boolean
   email: string | null
   desktop?: boolean
@@ -57,14 +60,23 @@ function Centered({ children }: { children: ReactNode }) {
   )
 }
 
-function AuthForm({ mode, onAuthed }: { mode: 'setup' | 'login'; onAuthed: () => void }) {
+interface AuthFormProps {
+  mode: 'setup' | 'login'
+  onAuthed: () => void
+  /** /api/auth/status already knows the caller is remote and unclaimed. */
+  codeRequiredUpFront?: boolean
+}
+
+function AuthForm({ mode, onAuthed, codeRequiredUpFront = false }: AuthFormProps) {
   const { t } = useI18n()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [setupCode, setSetupCode] = useState('')
-  // Revealed only after the server asks for it (remote first-run setup). A
-  // browser on the same machine as the server never sees this field.
-  const [codeRequired, setCodeRequired] = useState(false)
+  // Shown from the start when the server already knows a code is needed from
+  // this browser; otherwise revealed after the server asks for it (a remote
+  // caller whose status was cached as local). A browser on the same machine as
+  // the server never sees this field.
+  const [codeRequired, setCodeRequired] = useState(codeRequiredUpFront)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [attempted, setAttempted] = useState(false)
@@ -89,12 +101,17 @@ function AuthForm({ mode, onAuthed }: { mode: 'setup' | 'login'; onAuthed: () =>
       ? t('validation.passwordMin', { min: PASSWORD_MIN })
       : null
 
+  // Only enforced once the server has said this browser needs a code, so a
+  // local (loopback) first run is never asked for one.
+  const codeError = codeRequired && !setupCode.trim() ? t('validation.required') : null
+
   const showEmailError = attempted && !!emailError
   const showPasswordError = attempted && !!passwordError
+  const showCodeError = attempted && !!codeError
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (emailError || passwordError) {
+    if (emailError || passwordError || codeError) {
       setAttempted(true)
       return
     }
@@ -182,9 +199,11 @@ function AuthForm({ mode, onAuthed }: { mode: 'setup' | 'login'; onAuthed: () =>
                 value={setupCode}
                 onChange={e => setSetupCode(e.target.value)}
                 placeholder={t('auth.setupCodePlaceholder')}
-                aria-describedby="auth-setup-code-hint"
+                aria-invalid={showCodeError}
+                aria-describedby={showCodeError ? 'auth-setup-code-hint auth-setup-code-error' : 'auth-setup-code-hint'}
               />
               <p id="auth-setup-code-hint" className="text-xs text-muted-foreground">{t('auth.setupCodeHint')}</p>
+              {showCodeError && <FieldError id="auth-setup-code-error" error={codeError} />}
             </div>
           )}
           {/* A server rejection is the one error nobody can predict; it gets the same
@@ -545,7 +564,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
     }
     return <Centered><p className="flex items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-3.5 animate-spin" aria-hidden />{t('auth.loading')}</p></Centered>
   }
-  if (data.needsSetup) return <AuthForm mode="setup" onAuthed={onAuthed} />
+  if (data.needsSetup) {
+    return <AuthForm mode="setup" onAuthed={onAuthed} codeRequiredUpFront={!!data.setupCodeRequired} />
+  }
   if (!data.authenticated) return <AuthForm mode="login" onAuthed={onAuthed} />
 
   return <>{children}</>

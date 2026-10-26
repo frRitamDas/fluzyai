@@ -189,8 +189,13 @@ export function desktopSignInAllowed(req: Request): boolean {
 // sign-in form.
 authRouter.get('/status', (req: Request, res: Response) => {
   const session = validateSession(bearer(req));
+  const unclaimed = userCount() === 0;
   res.json({
-    needsSetup: userCount() === 0,
+    needsSetup: unclaimed,
+    // Whether the very same remote caller would be stopped by the setup code.
+    // The form shows the code field up front from this instead of making the
+    // operator submit, fail, and only then discover a second field exists.
+    setupCodeRequired: unclaimed && !isLoopbackRemote(req),
     authenticated: !!session,
     email: session?.email ?? null,
     desktop: desktopSignInAllowed(req),

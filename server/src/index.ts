@@ -15,8 +15,7 @@ import { loadConfig } from './lib/config.js';
 import { applyDeclarativeConfigFromEnv } from './services/declarative-config.js';
 import { restoreDbBackupIfNeeded, startDbBackupPump } from './lib/db-backup.js';
 import { startBackupScheduler } from './services/backups.js';
-import { userCount } from './services/auth.js';
-import { generateSetupCode } from './lib/setup-code.js';
+import { firstRunSetup } from './lib/first-run.js';
 import { warnOnEnvDrift } from './lib/env-drift.js';
 import { warnOnRoutingOverrideDrift } from './services/model-weight-overrides.js';
 import { installLogRedaction } from './lib/log-redaction.js';
@@ -65,12 +64,12 @@ async function main() {
     console.log(`[ratelimit] cleared ${expiredCooldowns} expired cooldown${expiredCooldowns === 1 ? '' : 's'}`);
   }
 
-  // First-run hardening: when the dashboard is still unclaimed, mint a one-time
-  // setup code and log it. A loopback browser can finish setup without it; a
-  // remote caller must supply it (see routes/auth.ts). Regenerated each boot.
-  if (userCount() === 0) {
-    generateSetupCode();
-  }
+  // First run: an account declared in the environment
+  // (FLUZY_ADMIN_EMAIL/FLUZY_ADMIN_PASSWORD) claims the install here, before a
+  // single request can arrive. Otherwise mint the one-time setup code — a
+  // loopback browser can finish setup without it; a remote caller must supply
+  // it (see routes/auth.ts). Re-evaluated each boot.
+  firstRunSetup();
 
   // Load the persisted proxy settings from the DB (env var wins if set).
   // Must happen after initDb so the settings table is ready.

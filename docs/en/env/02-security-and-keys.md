@@ -74,3 +74,12 @@ An operator pointing `FLUZY_DB_PATH` at a dedicated pre-existing directory can o
 ## First-run setup code
 
 The first dashboard account is created through the UI. A browser on the same machine as the server can do this with no extra step. If the server is reachable from other devices, creating that first account also requires a one-time setup code, printed in the server logs at startup while no account exists — this stops a stranger from claiming a freshly exposed install.
+
+On a hosted deployment you can skip the form entirely by declaring the account:
+
+```bash
+FLUZY_ADMIN_EMAIL=you@example.com
+FLUZY_ADMIN_PASSWORD=a-long-password-you-choose   # ≥ 8 characters
+```
+
+Both set and no account in the database means the account is created at boot, before the first request is served — so the install is already claimed when anyone reaches it, and the setup code is never minted. The password is hashed into the database and never logged, and an existing account is never touched: changing the password in the dashboard is not undone by the next cold start, so the two variables can be removed from the platform once you have signed in once. If either value is missing or invalid the pair is ignored with a warning in the boot log and the setup-code path stays in charge.
