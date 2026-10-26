@@ -1,4 +1,4 @@
-import type { Platform } from '@freellmapi/shared/types.js';
+import type { Platform } from '@fluzyai/shared/types.js';
 import type { BaseProvider } from './base.js';
 import { GoogleProvider } from './google.js';
 import { OpenAICompatProvider } from './openai-compat.js';
@@ -196,7 +196,7 @@ register(new OpenAICompatProvider({
   baseUrl: 'https://openrouter.ai/api/v1',
   extraHeaders: {
     'HTTP-Referer': 'http://localhost:3001',
-    'X-Title': 'FreeLLMAPI',
+    'X-Title': 'Fluzy AI',
   },
   // #1403: OpenRouter reports the key's real credit balance and hard limit on
   // its key-info endpoint (outside /api/v1). limit/remaining are USD amounts
@@ -354,7 +354,7 @@ register(new OpenAICompatProvider({
 // underneath, so watch for reversion to paid. ~30 concurrent requests succeed
 // before 429s (no documented RPM/RPD). Free key from platform.agnes-ai.com,
 // no card. Catalog rows live in the catalog (premium → age into free); not
-// shipped as freeapi model migrations.
+// shipped as fluzyai model migrations.
 // agnes-2.0-flash reasons before answering (live-probed 20s TTFB on a
 // one-word completion, 2026-07-11), so the default 15s timeout aborted it;
 // 60s matches the other reasoning-hosting platforms.
@@ -379,7 +379,7 @@ register(new OpenAICompatProvider({
 // reka-flash-3 (text reasoning) and reka-edge-2603 (natively multimodal —
 // accepts image/video input). Balance is dashboard-only (no credits API).
 // Catalog rows live in the catalog (premium → age into free); they are NOT
-// shipped as freeapi model migrations.
+// shipped as fluzyai model migrations.
 register(new OpenAICompatProvider({
   platform: 'reka',
   name: 'Reka',
@@ -420,7 +420,7 @@ register(new OpenAICompatProvider({
   name: 'Routeway',
   baseUrl: 'https://api.routeway.ai/v1',
   extraHeaders: {
-    'User-Agent': 'Mozilla/5.0 FreeLLMAPI/1.0',
+    'User-Agent': 'Mozilla/5.0 Fluzy AI/1.0',
   },
 }));
 
@@ -473,7 +473,7 @@ register(new OpenAICompatProvider({
   name: 'NavyAI',
   baseUrl: 'https://api.navy/v1',
   extraHeaders: {
-    'User-Agent': 'FreeLLMAPI/1.0',
+    'User-Agent': 'Fluzy AI/1.0',
   },
 }));
 

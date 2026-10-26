@@ -1,4 +1,4 @@
-import type { ChatMessage } from '@freellmapi/shared/types.js';
+import type { ChatMessage } from '@fluzyai/shared/types.js';
 import { allMessageText, messageChars } from './helpers.js';
 import { extractProtectedValues, scanProtectedSpans } from './preservation.js';
 

@@ -11,12 +11,12 @@ const COMMENTED_ENV_RE = /^\s*#\s*(?:export\s+)?([A-Z][A-Z0-9_]*)\s*=/;
 const KNOWN_UNDOCUMENTED_ENV = new Set([
   'NODE_ENV',
   'DEV_MODE',
-  'FREELLMAPI_DIR',
+  'FLUZY_DIR',
   'PROXY_URL',
   'CATALOG_BASE_URL',
   'CATALOG_PUBKEY',
   'CATALOG_SYNC_DISABLED',
-  'FREEAPI_DB_BACKUP_TARGET',
+  'FLUZY_DB_BACKUP_TARGET',
   'PREMIUM_SITE_URL',
 ]);
 
@@ -37,7 +37,7 @@ export interface EnvDriftPaths {
 
 export function defaultEnvDriftPaths(): Required<EnvDriftPaths> {
   return {
-    envPath: process.env.FREEAPI_ENV_PATH ?? path.join(REPO_ROOT, '.env'),
+    envPath: process.env.FLUZY_ENV_PATH ?? path.join(REPO_ROOT, '.env'),
     examplePath: path.join(REPO_ROOT, '.env.example'),
   };
 }

@@ -12,7 +12,7 @@ import type { Db, DbFactory } from './types.js';
 export type { Db, DbFactory } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DB_PATH = path.resolve(__dirname, '../../data/freeapi.db');
+const DB_PATH = path.resolve(__dirname, '../../data/fluzyai.db');
 const runtimeRequire = createRequire(import.meta.url);
 
 let db: Db;
@@ -25,7 +25,7 @@ export function getDb(): Db {
 }
 
 export function getDefaultDbPath(): string {
-  return process.env.FREEAPI_DB_PATH?.trim() || DB_PATH;
+  return process.env.FLUZY_DB_PATH?.trim() || DB_PATH;
 }
 
 /** Default factory: opens a better-sqlite3 connection at the given path. */
@@ -42,8 +42,65 @@ function betterSqliteFactory(resolvedPath: string): Db {
   return new BetterSqlite(resolvedPath) as Db;
 }
 
+/**
+ * Backing driver selection.
+ *
+ * `better-sqlite3` is the default because it is the fastest and needs no Node
+ * feature flag, but it is a native addon: it cannot be installed where the
+ * prebuilt binary is unreachable (some locked-down CI images) and it cannot be
+ * loaded on runtimes that ship without it (serverless platforms built from a
+ * lockfile that omitted optional dependencies). Node's built-in `node:sqlite`
+ * is a drop-in for the small synchronous contract this server uses, so it is
+ * used as the automatic fallback instead of failing the boot.
+ *
+ * FLUZY_DB_DRIVER pins the choice:
+ *   auto (default)  — better-sqlite3, falling back to node:sqlite
+ *   better-sqlite3  — native addon only, fail loudly if it is missing
+ *   node | node:sqlite — built-in driver only (Node >= 22.5 with
+ *                      --experimental-sqlite, unflagged from Node 24)
+ */
+export type DbDriver = 'auto' | 'better-sqlite3' | 'node';
+
+export function parseDbDriver(raw: string | undefined = process.env.FLUZY_DB_DRIVER): DbDriver {
+  const value = (raw ?? '').trim().toLowerCase();
+  if (value === 'node' || value === 'node:sqlite' || value === 'node-sqlite') return 'node';
+  if (value === 'better-sqlite3' || value === 'better-sqlite' || value === 'native') return 'better-sqlite3';
+  return 'auto';
+}
+
+/** Whether the optional native addon can actually be required in this process. */
+function hasBetterSqlite(): boolean {
+  try {
+    runtimeRequire('better-sqlite3');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Whether the runtime exposes the built-in synchronous SQLite driver. */
+function hasNodeSqlite(): boolean {
+  try {
+    runtimeRequire('node:sqlite');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function defaultDbFactory(platform: NodeJS.Platform = process.platform): DbFactory {
-  return platform === 'android' ? nodeSqliteFactory : betterSqliteFactory;
+  const driver = parseDbDriver();
+  // Android has no better-sqlite3 prebuilds, so it always uses the built-in.
+  if (platform === 'android') return nodeSqliteFactory;
+  if (driver === 'node') return nodeSqliteFactory;
+  if (driver === 'better-sqlite3') return betterSqliteFactory;
+  if (hasBetterSqlite()) return betterSqliteFactory;
+  if (hasNodeSqlite()) {
+    console.log('[db] better-sqlite3 is unavailable — using the built-in node:sqlite driver');
+    return nodeSqliteFactory;
+  }
+  // Neither is available: let the native path raise its actionable error.
+  return betterSqliteFactory;
 }
 
 export function connectDb(
@@ -98,9 +155,9 @@ export function connectDb(
  * The sidecars can only be covered by the directory: SQLite creates `-wal` and
  * `-shm` on the first write and deletes them on the last clean close, so at
  * startup there is nothing there to chmod. But the directory is also shared
- * state — FREEAPI_DB_PATH may point anywhere — and locking down a directory
+ * state — FLUZY_DB_PATH may point anywhere — and locking down a directory
  * that is not ours is a worse outage than the leak it prevents. Pointing the DB
- * at `/tmp/freeapi.db` must not chmod 0700 `/tmp`.
+ * at `/tmp/fluzyai.db` must not chmod 0700 `/tmp`.
  *
  * So the rule is ownership by construction rather than a guess about what is
  * safe. Two cases qualify, and nothing else does:
@@ -113,8 +170,8 @@ export function connectDb(
  * `server/data`, so case 1 alone would harden new installs and quietly leave
  * every upgrade behind.
  *
- * An operator who points FREEAPI_DB_PATH at a dedicated directory can opt in
- * with FREEAPI_DB_DIR_HARDENING=1, and one who dislikes the default can opt out
+ * An operator who points FLUZY_DB_PATH at a dedicated directory can opt in
+ * with FLUZY_DB_DIR_HARDENING=1, and one who dislikes the default can opt out
  * with =0. It is a deliberate default-on-where-safe rather than a flag, because
  * hardening that only runs when someone remembers to ask for it is the same
  * class of failure as hardening nobody noticed had stopped running.
@@ -138,7 +195,7 @@ export function shouldHardenDataDir(
 /** Tri-state, matching CSP_UPGRADE_INSECURE_REQUESTS in lib/config.ts: on, off,
  *  or unset to leave the policy above in charge. */
 function parseDirHardeningOverride(): boolean | undefined {
-  const raw = process.env.FREEAPI_DB_DIR_HARDENING;
+  const raw = process.env.FLUZY_DB_DIR_HARDENING;
   if (raw === undefined || raw.trim() === '') return undefined;
   const lower = raw.trim().toLowerCase();
   if (lower === 'true' || lower === '1' || lower === 'yes') return true;
@@ -157,7 +214,7 @@ function restrictDataDir(dataDir: string, created: boolean): void {
       console.log(
         `[db] leaving permissions on ${dataDir} as they are: it is not a directory this server created. ` +
         'The WAL sidecars written there inherit whatever it already grants. ' +
-        'Set FREEAPI_DB_DIR_HARDENING=1 if it belongs to this account alone.',
+        'Set FLUZY_DB_DIR_HARDENING=1 if it belongs to this account alone.',
       );
     }
     return;
@@ -230,7 +287,7 @@ export function getUnifiedApiKey(): string {
 
 export function regenerateUnifiedKey(): string {
   const db = getDb();
-  const key = `freellmapi-${crypto.randomBytes(24).toString('hex')}`;
+  const key = `fluzyai-${crypto.randomBytes(24).toString('hex')}`;
   db.prepare("UPDATE settings SET value = ? WHERE key = 'unified_api_key'").run(key);
   return key;
 }

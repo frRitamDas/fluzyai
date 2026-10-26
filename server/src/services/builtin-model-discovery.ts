@@ -1,6 +1,6 @@
 import type { Db } from '../db/types.js';
 import type { Scheduler } from '../lib/scheduler.js';
-import type { Platform } from '@freellmapi/shared/types.js';
+import type { Platform } from '@fluzyai/shared/types.js';
 import { getProvider } from '../providers/index.js';
 import { OpenAICompatProvider } from '../providers/openai-compat.js';
 import { decrypt } from '../lib/crypto.js';

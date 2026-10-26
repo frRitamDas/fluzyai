@@ -262,7 +262,7 @@ function keepHits(hits: Array<{ title: string; url: string; content: string; sco
 
 // Parallel's anonymous Search MCP asks for a stable conversation id on every
 // call (used for its free-tier rate limiting); one per server process.
-const PARALLEL_SESSION_ID = `freellmapi-${randomUUID()}`;
+const PARALLEL_SESSION_ID = `fluzyai-${randomUUID()}`;
 const RATE_LIMIT_TEXT = /rate.?limit|too many requests|quota/i;
 
 /** Unwrap a JSON-RPC `tools/call` reply from Parallel's Search MCP into the

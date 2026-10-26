@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import type { ChatMessage, ChatContent } from '@freellmapi/shared/types.js';
+import type { ChatMessage, ChatContent } from '@fluzyai/shared/types.js';
 import { getSetting, setSetting } from '../db/index.js';
 import { setRequestRoutingStrategy } from '../lib/client-context.js';
 import { DecisionError, listDecisionModels, runDecision } from './decision.js';
@@ -24,7 +24,7 @@ const MIN_PROBABILITY_KEY = 'routing_decision_min_probability';
 export const DEFAULT_MIN_PROBABILITY = 0.5;
 export const DECISION_TIMEOUT_MS = 1500;
 /** Logged as the decision's client so Models → Decision shows routing usage. */
-export const ROUTER_CLIENT = 'freellmapi-router';
+export const ROUTER_CLIENT = 'fluzyai-router';
 // BeatAPI's free routes allow one successful call a minute per account: fine
 // for /v1/decisions, far too slow to sit in front of every chat turn.
 const AUTO_SKIP_PLATFORMS: ReadonlySet<string> = new Set(['beatapi']);

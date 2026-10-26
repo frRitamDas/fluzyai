@@ -31,10 +31,24 @@ describe('node:sqlite Android fallback', () => {
     for (const dir of tempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('is selected only for Android', () => {
+  it('is selected for Android, and elsewhere only when the native addon is unavailable', () => {
+    // Android has no better-sqlite3 prebuilds, so the built-in driver is the
+    // only option there. On every other platform the default is the native
+    // addon, with node:sqlite as the automatic stand-in when it cannot be
+    // loaded (FLUZY_DB_DRIVER=auto).
     expect(defaultDbFactory('android')).toBe(nodeSqliteFactory);
-    expect(defaultDbFactory('darwin')).not.toBe(nodeSqliteFactory);
-    expect(defaultDbFactory('linux')).not.toBe(nodeSqliteFactory);
+
+    const previous = process.env.FLUZY_DB_DRIVER;
+    try {
+      process.env.FLUZY_DB_DRIVER = 'better-sqlite3';
+      expect(defaultDbFactory('darwin')).not.toBe(nodeSqliteFactory);
+      expect(defaultDbFactory('linux')).not.toBe(nodeSqliteFactory);
+      process.env.FLUZY_DB_DRIVER = 'node';
+      expect(defaultDbFactory('darwin')).toBe(nodeSqliteFactory);
+    } finally {
+      if (previous === undefined) delete process.env.FLUZY_DB_DRIVER;
+      else process.env.FLUZY_DB_DRIVER = previous;
+    }
   });
 
   itWithSqlite('runs the complete application migration set', () => {
@@ -47,9 +61,9 @@ describe('node:sqlite Android fallback', () => {
   });
 
   itWithSqlite('opens a file-backed database with WAL and file metadata', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'freellmapi-node-sqlite-'));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fluzyai-node-sqlite-'));
     tempDirs.push(dir);
-    const dbPath = path.join(dir, 'freeapi.db');
+    const dbPath = path.join(dir, 'fluzyai.db');
 
     db = connectDb(dbPath, { factory: nodeSqliteFactory });
     db.exec('CREATE TABLE sample (id INTEGER PRIMARY KEY, value TEXT NOT NULL)');

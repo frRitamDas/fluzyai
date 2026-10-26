@@ -1,4 +1,4 @@
-# FreeLLMAPI documentation
+# Fluzy AI documentation
 
 Pick a language:
 

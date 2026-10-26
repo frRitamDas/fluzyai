@@ -20,14 +20,14 @@ const PASSWORD_MIN = 8
 // seeded session is gone (expired after a month of uptime, or cleared by a
 // 401) it asks the shell for a fresh one through the preload bridge.
 type DesktopWindow = Window & {
-  __FREEAPI_DESKTOP__?: boolean
-  __FREEAPI_SESSION__?: () => Promise<string>
+  __FLUZY_DESKTOP__?: boolean
+  __FLUZY_SESSION__?: () => Promise<string>
 }
 function desktopSessionBridge(): (() => Promise<string>) | null {
   if (typeof window === 'undefined') return null
   const w = window as DesktopWindow
-  return w.__FREEAPI_DESKTOP__ === true && typeof w.__FREEAPI_SESSION__ === 'function'
-    ? w.__FREEAPI_SESSION__
+  return w.__FLUZY_DESKTOP__ === true && typeof w.__FLUZY_SESSION__ === 'function'
+    ? w.__FLUZY_SESSION__
     : null
 }
 
@@ -129,9 +129,12 @@ function AuthForm({ mode, onAuthed }: { mode: 'setup' | 'login'; onAuthed: () =>
 
   return (
     <Centered>
-      <div className="mb-6 flex items-center gap-2">
-        <span className="inline-block size-2 rounded-full bg-foreground" />
-        <span className="font-semibold tracking-tight text-sm">FreeLLMAPI</span>
+      <div className="mb-6 flex flex-col gap-1">
+        <div className="flex items-center gap-2">
+          <span className="inline-block size-2 rounded-full bg-foreground" />
+          <span className="font-semibold tracking-tight text-sm">Fluzy AI</span>
+        </div>
+        <span className="ms-4 text-[11px] text-muted-foreground">Developed by Ritam Das</span>
       </div>
       <div className="rounded-3xl border bg-card p-6">
         <h1 className="text-lg font-semibold tracking-tight">{isSetup ? t('auth.createYourAccount') : t('auth.signIn')}</h1>
@@ -273,9 +276,12 @@ function ForgotPasswordForm({ onBack, onAuthed }: { onBack: () => void; onAuthed
 
   return (
     <Centered>
-      <div className="mb-6 flex items-center gap-2">
-        <span className="inline-block size-2 rounded-full bg-foreground" />
-        <span className="font-semibold tracking-tight text-sm">FreeLLMAPI</span>
+      <div className="mb-6 flex flex-col gap-1">
+        <div className="flex items-center gap-2">
+          <span className="inline-block size-2 rounded-full bg-foreground" />
+          <span className="font-semibold tracking-tight text-sm">Fluzy AI</span>
+        </div>
+        <span className="ms-4 text-[11px] text-muted-foreground">Developed by Ritam Das</span>
       </div>
       <div className="rounded-3xl border bg-card p-6">
         <h1 className="text-base font-medium">{t('auth.forgotPassword')}</h1>

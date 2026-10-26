@@ -1,13 +1,9 @@
 {
-  "name": "freellmapi-desktop",
+  "name": "fluzyai-desktop",
   "version": "0.16.10",
-  "description": "FreeLLMAPI menu-bar app — local OpenAI-compatible LLM router",
-  "author": {
-    "name": "tashfeenahmed",
-    "email": "tashfene@gmail.com",
-    "url": "https://github.com/tashfeenahmed"
-  },
-  "homepage": "https://freellmapi.co/",
+  "description": "Fluzy AI menu-bar app \u2014 local OpenAI-compatible LLM router",
+  "author": "Ritam Das (https://github.com/frRitamDas)",
+  "homepage": "https://fluzyaiorg.vercel.app/",
   "private": true,
   "type": "module",
   "main": "build/main.mjs",

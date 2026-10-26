@@ -28,13 +28,13 @@ describe('auto backup dump retention (#1675)', () => {
 
   beforeAll(() => {
     process.env.ENCRYPTION_KEY = '0'.repeat(64);
-    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freeapi-autodump-'));
-    process.env.FREEAPI_DB_PATH = path.join(dataDir, 'freeapi.db');
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fluzyai-autodump-'));
+    process.env.FLUZY_DB_PATH = path.join(dataDir, 'fluzyai.db');
     initDb(':memory:');
   });
 
   afterAll(() => {
-    delete process.env.FREEAPI_DB_PATH;
+    delete process.env.FLUZY_DB_PATH;
     restoreEnv();
   });
 

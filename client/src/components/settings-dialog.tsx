@@ -667,6 +667,10 @@ export function SettingsDialog({
             </button>
           </div>
         )}
+
+        <p className="border-t px-5 py-2 text-[11px] text-muted-foreground sm:px-6">
+          Fluzy AI · Developed by Ritam Das
+        </p>
       </DialogPopup>
     </Dialog>
   )

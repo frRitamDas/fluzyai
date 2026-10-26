@@ -5,14 +5,14 @@ import { getRoutingStrategy } from '../../services/router.js';
 import { userCount, verifyCredentials } from '../../services/auth.js';
 import { SETTING_LICENSE_KEY } from '../../services/catalog-sync.js';
 
-const ORIGINAL_CONFIG_JSON = process.env.FREEAPI_CONFIG_JSON;
-const ORIGINAL_CONFIG_PATH = process.env.FREEAPI_CONFIG_PATH;
+const ORIGINAL_CONFIG_JSON = process.env.FLUZY_CONFIG_JSON;
+const ORIGINAL_CONFIG_PATH = process.env.FLUZY_CONFIG_PATH;
 
 function restoreEnv() {
-  if (ORIGINAL_CONFIG_JSON === undefined) delete process.env.FREEAPI_CONFIG_JSON;
-  else process.env.FREEAPI_CONFIG_JSON = ORIGINAL_CONFIG_JSON;
-  if (ORIGINAL_CONFIG_PATH === undefined) delete process.env.FREEAPI_CONFIG_PATH;
-  else process.env.FREEAPI_CONFIG_PATH = ORIGINAL_CONFIG_PATH;
+  if (ORIGINAL_CONFIG_JSON === undefined) delete process.env.FLUZY_CONFIG_JSON;
+  else process.env.FLUZY_CONFIG_JSON = ORIGINAL_CONFIG_JSON;
+  if (ORIGINAL_CONFIG_PATH === undefined) delete process.env.FLUZY_CONFIG_PATH;
+  else process.env.FLUZY_CONFIG_PATH = ORIGINAL_CONFIG_PATH;
 }
 
 describe('declarative config import', () => {
@@ -22,8 +22,8 @@ describe('declarative config import', () => {
   });
 
   beforeEach(() => {
-    delete process.env.FREEAPI_CONFIG_JSON;
-    delete process.env.FREEAPI_CONFIG_PATH;
+    delete process.env.FLUZY_CONFIG_JSON;
+    delete process.env.FLUZY_CONFIG_PATH;
     getDb().prepare('DELETE FROM api_keys').run();
   });
 
@@ -97,8 +97,8 @@ describe('declarative config import', () => {
     `).get(target.platform, target.model_id) as { fallback_enabled: number }).fallback_enabled).toBe(0);
   });
 
-  it('applies inline JSON from FREEAPI_CONFIG_JSON idempotently', () => {
-    process.env.FREEAPI_CONFIG_JSON = JSON.stringify({
+  it('applies inline JSON from FLUZY_CONFIG_JSON idempotently', () => {
+    process.env.FLUZY_CONFIG_JSON = JSON.stringify({
       keys: [{ platform: 'groq', key: 'gsk_config_key', label: 'config' }],
     });
 
@@ -137,7 +137,7 @@ describe('declarative config import', () => {
   it('boot apply (FromEnv) survives a legacy keyless pollinations entry', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
-      process.env.FREEAPI_CONFIG_JSON = JSON.stringify({
+      process.env.FLUZY_CONFIG_JSON = JSON.stringify({
         keys: [
           { platform: 'pollinations', label: 'legacy' },
           { platform: 'groq', key: 'gsk_config_key', label: 'config' },
@@ -189,7 +189,7 @@ describe('declarative config import', () => {
       .toThrow(/invalid declarative config/);
     expect(() => applyDeclarativeConfig({ keys: [{ platform: 'unknown-platform', key: 'x' }] }))
       .toThrow(/unknown provider platform/);
-    process.env.FREEAPI_CONFIG_JSON = '{ not json';
+    process.env.FLUZY_CONFIG_JSON = '{ not json';
     expect(() => applyDeclarativeConfigFromEnv()).toThrow();
   });
 });
@@ -209,8 +209,8 @@ describe('declarative config with two relays serving one model id', () => {
   });
 
   beforeEach(() => {
-    delete process.env.FREEAPI_CONFIG_JSON;
-    delete process.env.FREEAPI_CONFIG_PATH;
+    delete process.env.FLUZY_CONFIG_JSON;
+    delete process.env.FLUZY_CONFIG_PATH;
     const db = getDb();
     db.prepare("DELETE FROM fallback_config WHERE model_db_id IN (SELECT id FROM models WHERE platform = 'custom')").run();
     db.prepare("DELETE FROM profile_models WHERE model_db_id IN (SELECT id FROM models WHERE platform = 'custom')").run();

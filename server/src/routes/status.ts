@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import type { Platform } from '@freellmapi/shared/types.js';
+import type { Platform } from '@fluzyai/shared/types.js';
 import { getDb, getUnifiedApiKey } from '../db/index.js';
 import { isEncryptionKeyInitialized } from '../lib/crypto.js';
 import { extractApiToken, timingSafeStringEqual } from './proxy.js';
@@ -14,6 +14,7 @@ import {
   LOW_BALANCE_ABSOLUTE_MIN_LIMIT,
 } from '../services/quota-forecast.js';
 import { openapiSpec } from '../docs/openapi.js';
+import { remoteDbStatus } from '../lib/remote-db.js';
 
 // Machine-readable operational endpoints for meta-gateways / orchestrators that
 // run this proxy as one upstream lane (LibreChat, LiteLLM Proxy, OmniRoute — see
@@ -54,7 +55,10 @@ statusRouter.get('/livez', (_req: Request, res: Response) => {
     return;
   }
 
-  res.json({ status: 'ok', version, uptime_s });
+  // Persistence is the one piece of state a serverless deployment can silently
+  // lose: without a remote snapshot the database lives and dies with the
+  // instance. Report it so a probe can tell the two apart.
+  res.json({ status: 'ok', version, uptime_s, persistence: remoteDbStatus() });
 });
 
 // GET /readyz — readiness. 200 when at least one upstream is serviceable right
