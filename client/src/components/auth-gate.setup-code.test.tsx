@@ -9,6 +9,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MemoryRouter } from 'react-router-dom'
 import { I18nProvider } from '@/i18n'
 import { AuthGate } from './auth-gate'
 
@@ -34,7 +35,11 @@ function mount() {
     root.render(
       <QueryClientProvider client={client}>
         <I18nProvider initialLocale="en">
-          <AuthGate><div data-testid="app">dashboard</div></AuthGate>
+          {/* /login: these cases are about the form itself. The signed-out home
+              page that now lives at "/" has its own test file. */}
+          <MemoryRouter initialEntries={['/login']}>
+            <AuthGate><div data-testid="app">dashboard</div></AuthGate>
+          </MemoryRouter>
         </I18nProvider>
       </QueryClientProvider>,
     )
@@ -125,7 +130,7 @@ describe('AuthGate first-run setup code', () => {
     await submit()
 
     expect(posts).toHaveLength(1)
-    expect(posts[0].url.endsWith('/api/auth/setup')).toBe(true)
+    expect(posts[0].url.endsWith('/api/auth/register')).toBe(true)
     expect(posts[0].body.setupCode).toBe('ABC12345')
   })
 })

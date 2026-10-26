@@ -196,6 +196,10 @@ authRouter.get('/status', (req: Request, res: Response) => {
     // The form shows the code field up front from this instead of making the
     // operator submit, fail, and only then discover a second field exists.
     setupCodeRequired: unclaimed && !isLoopbackRemote(req),
+    // Whether "Create account" can do anything right now: an unclaimed install
+    // always can (that is the first account), and a claimed one only when the
+    // operator opted into multi-operator signup.
+    signupEnabled: unclaimed || signupAllowed(),
     authenticated: !!session,
     email: session?.email ?? null,
     desktop: desktopSignInAllowed(req),
@@ -208,6 +212,69 @@ authRouter.post('/desktop-session', (req: Request, res: Response) => {
     return;
   }
   res.json({ token: desktopSessionToken() });
+});
+
+// Whether this deployment accepts additional accounts after it has been
+// claimed (FLUZY_ALLOW_SIGNUP=1). Off by default and deliberately so: the
+// dashboard is single-tenant, so every account it holds can read the provider
+// keys, the unified API key, and every setting. A self-hosted install or a
+// deployment meant for a team can turn it on; a public URL should not.
+function signupAllowed(): boolean {
+  const raw = (process.env.FLUZY_ALLOW_SIGNUP ?? '').trim().toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
+}
+
+// Create the dashboard account from the sign-in page.
+//
+// This is the same rule `/setup` follows for the *first* account (a remote
+// caller needs the one-time code, a browser on this machine does not), plus one
+// extra gate for every account after it: the operator must have opted in with
+// FLUZY_ALLOW_SIGNUP=1. Kept as its own route rather than folded into /setup so
+// that the original bootstrap contract — and anything asserting on it — stays
+// exactly as it was.
+authRouter.post('/register', (req: Request, res: Response) => {
+  const unclaimed = userCount() === 0;
+
+  if (!unclaimed && !signupAllowed()) {
+    res.status(403).json({
+      error: {
+        message: 'This deployment has already been claimed and does not accept new accounts. Sign in instead.',
+        type: 'signup_disabled',
+      },
+    });
+    return;
+  }
+
+  if (unclaimed && !isLoopbackRemote(req) && !setupCodeMatches((req.body ?? {}).setupCode)) {
+    res.status(403).json({
+      error: {
+        message: 'A setup code is required to create the first account from a remote device. ' +
+          'Check the server logs for the code, or open the dashboard from a browser on the machine running Fluzy AI.',
+        type: 'setup_code_required',
+      },
+    });
+    return;
+  }
+
+  const parsed = signupSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: { message: parsed.error.errors.map(e => e.message).join(', ') } });
+    return;
+  }
+
+  try {
+    const user = createUser(parsed.data.email, parsed.data.password);
+    // Whichever account exists first claims a fresh install.
+    if (unclaimed) clearSetupCode();
+    const token = createSession(user.userId);
+    res.status(201).json({ token, email: user.email });
+  } catch (error) {
+    if ((error as { code?: string })?.code === 'email_taken') {
+      res.status(409).json({ error: { message: 'An account with that email already exists', type: 'email_taken' } });
+      return;
+    }
+    throw error;
+  }
 });
 
 // First-run account creation. Only allowed while there are zero users, so it

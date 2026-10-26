@@ -83,3 +83,7 @@ FLUZY_ADMIN_PASSWORD=a-long-password-you-choose   # ≥ 8 characters
 ```
 
 Both set and no account in the database means the account is created at boot, before the first request is served — so the install is already claimed when anyone reaches it, and the setup code is never minted. The password is hashed into the database and never logged, and an existing account is never touched: changing the password in the dashboard is not undone by the next cold start, so the two variables can be removed from the platform once you have signed in once. If either value is missing or invalid the pair is ignored with a warning in the boot log and the setup-code path stays in charge.
+
+### Additional accounts
+
+The sign-in page shows **Sign in** and **Create account** side by side. Creating an account works on an unclaimed install (that is the first account); afterwards it answers with an explanation instead of a form, because each deployment has exactly one owner by default. Set `FLUZY_ALLOW_SIGNUP=1` to accept further signups — only do that where you also control who can reach the URL: the dashboard is single-tenant, so **every account can read the provider keys, the unified API key and every setting**.
