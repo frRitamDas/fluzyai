@@ -19,3 +19,13 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+Fluzy AI — modifications and rebranding
+Copyright (c) 2026 Ritam Das
+
+Fluzy AI is a derivative work of the MIT-licensed "FreeLLMAPI" project
+(https://github.com/tashfeenahmed/freellmapi), Copyright (c) 2026 Tashfeen Ahmed.
+The original license above is preserved in full; the Fluzy AI rebrand and the
+Vercel/Supabase deployment path are released under the same MIT terms.
