@@ -101,6 +101,13 @@ export type RestoreResult = 'restored' | 'absent' | 'disabled' | 'failed';
 export async function restoreRemoteDb(dbPath: string): Promise<RestoreResult> {
   const config = remoteDbConfig();
   if (!config) return 'disabled';
+  lastRestoreAt = new Date().toISOString();
+  const result = await restoreRemoteDbInner(config, dbPath);
+  lastRestoreResult = result;
+  return result;
+}
+
+async function restoreRemoteDbInner(config: RemoteDbConfig, dbPath: string): Promise<RestoreResult> {
 
   try {
     const res = await fetch(objectUrl(config), {
@@ -154,6 +161,39 @@ let debounceTimer: NodeJS.Timeout | null = null;
  *  (a session touch, a no-op UPDATE) does not cost another upload. */
 let lastUploaded: { size: number; mtimeMs: number } | null = null;
 
+// Observed state, surfaced by GET /livez so an operator can tell "persistence is
+// configured and working" apart from "this instance is about to forget
+// everything". Nothing here is a secret: bucket and object names only.
+let lastRestoreResult: RestoreResult | null = null;
+let lastRestoreAt: string | null = null;
+let lastUploadAt: string | null = null;
+let lastError: string | null = null;
+
+export interface RemoteDbStatus {
+  configured: boolean;
+  bucket: string | null;
+  object: string | null;
+  lastRestore: RestoreResult | null;
+  lastRestoreAt: string | null;
+  lastUploadAt: string | null;
+  pendingWrite: boolean;
+  lastError: string | null;
+}
+
+export function remoteDbStatus(): RemoteDbStatus {
+  const config = remoteDbConfig();
+  return {
+    configured: config !== null,
+    bucket: config?.bucket ?? null,
+    object: config?.object ?? null,
+    lastRestore: lastRestoreResult,
+    lastRestoreAt,
+    lastUploadAt,
+    pendingWrite: dirty,
+    lastError,
+  };
+}
+
 function checkpoint(db: Db): void {
   try {
     // Fold the WAL back into the main file so the uploaded bytes are complete.
@@ -199,12 +239,15 @@ export async function flushRemoteDb(): Promise<boolean> {
         throw new Error(`HTTP ${res.status} ${res.statusText}${detail ? ` — ${detail.slice(0, 200)}` : ''}`);
       }
       lastUploaded = { size: stat.size, mtimeMs: stat.mtimeMs };
+      lastUploadAt = new Date().toISOString();
+      lastError = null;
       console.log(`[remote-db] uploaded ${(body.length / 1024).toFixed(1)} KB to ${config.bucket}/${config.object}`);
       return true;
     } catch (error) {
       // Keep the dirty flag so the next write (or request) retries the upload.
       dirty = true;
-      console.warn(`[remote-db] upload failed: ${(error as Error)?.message ?? error}`);
+      lastError = (error as Error)?.message ?? String(error);
+      console.warn(`[remote-db] upload failed: ${lastError}`);
       return false;
     } finally {
       inFlight = null;
