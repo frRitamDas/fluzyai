@@ -33,6 +33,9 @@ describe('Dashboard auth (#35)', () => {
   it('reports needsSetup before any account exists', async () => {
     const { body } = await call(app, 'GET', '/api/auth/status');
     expect(body).toMatchObject({ needsSetup: true, authenticated: false });
+    // A browser on this machine is not asked for the one-time setup code, and
+    // the form relies on this flag to keep the field hidden.
+    expect(body.setupCodeRequired).toBe(false);
   });
 
   it('gates /api/* routes with 401 when unauthenticated', async () => {

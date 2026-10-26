@@ -161,7 +161,8 @@ snapshotted to a private Supabase Storage bucket after every write.
 #    (SQL: values ('fluzyai-db', 'fluzyai-db', false, 52428800))
 # 2. import the repo in Vercel, framework preset "Other", then set:
 ENCRYPTION_KEY=<64 hex chars>
-FLUZY_SETUP_CODE=<first-run code you choose>
+FLUZY_ADMIN_EMAIL=<the email you will sign in with>
+FLUZY_ADMIN_PASSWORD=<a password of 8+ characters>
 FLUZY_DB_PATH=/tmp/fluzyai/fluzyai.db
 FLUZY_DB_DRIVER=node
 FLUZY_SERVE_STATIC=0
@@ -173,8 +174,10 @@ CATALOG_SYNC_DISABLED=1
 # 3. deploy — Vercel runs `npm run vercel-build`
 ```
 
-Open the deployment, create the dashboard account with `FLUZY_SETUP_CODE`, add
-provider keys, and point clients at `https://<deployment>/v1`.
+Open the deployment and sign in with the account those two variables created at
+boot (they are optional — without them the first-run form asks for an email, a
+password and `FLUZY_SETUP_CODE`), add provider keys, and point clients at
+`https://<deployment>/v1`.
 
 Full details, including the platform limits worth knowing before you move a
 workload here (4.5 MB request bodies, 60 s per invocation, single snapshot

@@ -9,8 +9,7 @@ import { loadConfig } from './lib/config.js';
 import { applyDeclarativeConfigFromEnv } from './services/declarative-config.js';
 import { loadCacheFromDb } from './services/cache.js';
 import { restoreProxySettings } from './lib/proxy.js';
-import { userCount } from './services/auth.js';
-import { generateSetupCode } from './lib/setup-code.js';
+import { firstRunSetup } from './lib/first-run.js';
 import { warnOnEnvDrift } from './lib/env-drift.js';
 import { installLogRedaction } from './lib/log-redaction.js';
 import {
@@ -121,13 +120,13 @@ async function boot(): Promise<{ app: Handler; dbPath: string }> {
   loadCacheFromDb();
   restoreProxySettings();
 
-  // First-run hardening on a fresh deployment: the dashboard is unclaimed, so
-  // mint the one-time setup code. FLUZY_SETUP_CODE makes it operator-supplied,
-  // which is what a remote-only deployment needs — nobody can read stdout of a
-  // serverless instance they have not claimed yet.
-  if (userCount() === 0) {
-    generateSetupCode();
-  }
+  // First run on a fresh deployment. An account declared in the environment
+  // (FLUZY_ADMIN_EMAIL/FLUZY_ADMIN_PASSWORD) is created here, which claims the
+  // install before any request can reach it — the recommended path on Vercel,
+  // where nobody can read the stdout of an instance they have not claimed yet
+  // and the setup code would have to be copied into the form by hand. Without
+  // it, the one-time setup code is minted (FLUZY_SETUP_CODE pins it).
+  firstRunSetup();
 
   const app = createApp(config);
   if (isRemoteDbConfigured()) {
