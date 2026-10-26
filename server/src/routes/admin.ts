@@ -6,16 +6,28 @@ import { getAllProviders, resolveProvider } from '../providers/index.js';
 import { encrypt, maskKey, decrypt } from '../lib/crypto.js';
 import { isSearchPlatform } from '../lib/search-platforms.js';
 import { triggerBuiltinModelDiscovery } from '../services/builtin-model-discovery.js';
-import { checkKeyHealth } from '../services/health.js';
 import { clearCooldownsForKey } from '../services/ratelimit.js';
 import {
   adminCount,
   isAdminSession,
   listUsers,
   roleForUser,
+  setUserApiAccess,
+  setUserDailyLimit,
   setUserRole,
+  setUserStatus,
+  rotateUserApiKey,
   type Role,
 } from '../services/roles.js';
+import {
+  accessSettings,
+  adminPath,
+  setDefaultApiAccess,
+  setDefaultDailyLimit,
+  setSignupOpen,
+} from '../services/access.js';
+import { remoteDbStatus } from '../lib/remote-db.js';
+import { checkAllKeys, checkKeyHealth } from '../services/health.js';
 import {
   ANNOUNCEMENT_BODY_MAX,
   ANNOUNCEMENT_TITLE_MAX,
@@ -70,6 +82,15 @@ adminRouter.get('/overview', (_req: Request, res: Response) => {
     },
     announcements: {
       active: count('SELECT COUNT(*) AS c FROM announcements WHERE active = 1'),
+    },
+    // Snapshot state, so "did my change survive?" is answerable from here
+    // instead of from the platform's logs. A failing upload is the one thing
+    // that makes dashboard changes disappear, and it used to be invisible.
+    persistence: remoteDbStatus(),
+    access: {
+      ...accessSettings(),
+      suspended: count("SELECT COUNT(*) AS c FROM users WHERE status = 'suspended'"),
+      withoutApiAccess: count('SELECT COUNT(*) AS c FROM users WHERE api_access = 0'),
     },
   });
 });
@@ -301,24 +322,80 @@ adminRouter.get('/users', (_req: Request, res: Response) => {
 
 adminRouter.patch('/users/:id', (req: Request, res: Response) => {
   const id = Number(req.params.id);
-  const parsed = z.object({ role: z.enum(['admin', 'user']) }).safeParse(req.body ?? {});
+  const parsed = z.object({
+    role: z.enum(['admin', 'user']).optional(),
+    status: z.enum(['active', 'suspended']).optional(),
+    apiAccess: z.boolean().optional(),
+    dailyLimit: z.number().int().positive().nullable().optional(),
+  }).safeParse(req.body ?? {});
   if (!Number.isFinite(id) || !parsed.success) {
-    res.status(400).json({ error: { message: 'role must be "admin" or "user"' } });
+    res.status(400).json({ error: { message: 'Nothing to update, or an invalid value' } });
     return;
   }
   const me = (req as Request & { user?: { userId: number } }).user;
-  if (me?.userId === id && parsed.data.role !== 'admin') {
+  const target = getDb().prepare('SELECT id, role FROM users WHERE id = ?').get(id) as
+    | { id: number; role: string }
+    | undefined;
+  if (!target) {
+    res.status(404).json({ error: { message: 'No such account' } });
+    return;
+  }
+
+  const isSelf = me?.userId === id;
+  // The three ways to lock a deployment out of its own admin panel. Each is
+  // refused with the reason, because the alternative is an operator discovering
+  // it after a redeploy.
+  if (isSelf && parsed.data.role === 'user') {
     res.status(400).json({
       error: { message: 'You cannot remove your own admin access — ask another admin to do it', type: 'self_demote' },
     });
     return;
   }
-  const result = setUserRole(id, parsed.data.role as Role);
-  if (!result.ok) {
-    res.status(400).json({ error: { message: result.error, type: 'role_change_rejected' } });
+  if (isSelf && parsed.data.status === 'suspended') {
+    res.status(400).json({ error: { message: 'You cannot suspend your own account', type: 'self_suspend' } });
     return;
   }
-  res.json({ success: true, role: roleForUser(id) });
+  const losingAdmin = target.role === 'admin' &&
+    (parsed.data.role === 'user' || parsed.data.status === 'suspended');
+  if (losingAdmin && adminCount() <= 1) {
+    res.status(400).json({
+      error: { message: 'This is the only admin left — promote someone else first', type: 'last_admin' },
+    });
+    return;
+  }
+
+  if (parsed.data.role !== undefined) {
+    const result = setUserRole(id, parsed.data.role as Role);
+    if (!result.ok) {
+      res.status(400).json({ error: { message: result.error, type: 'role_change_rejected' } });
+      return;
+    }
+  }
+  if (parsed.data.status !== undefined) setUserStatus(id, parsed.data.status);
+  if (parsed.data.apiAccess !== undefined) setUserApiAccess(id, parsed.data.apiAccess);
+  if (parsed.data.dailyLimit !== undefined) setUserDailyLimit(id, parsed.data.dailyLimit);
+
+  res.json({
+    success: true,
+    user: listUsers().find(user => user.id === id) ?? null,
+  });
+});
+
+// Issue a fresh inference key for an account (a leaked key, a departed
+// contractor). Returned once, to the admin, so it can be handed over; the old
+// key stops working immediately.
+adminRouter.post('/users/:id/rotate-key', (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: { message: 'Invalid account id' } });
+    return;
+  }
+  const existing = getDb().prepare('SELECT id FROM users WHERE id = ?').get(id) as { id: number } | undefined;
+  if (!existing) {
+    res.status(404).json({ error: { message: 'No such account' } });
+    return;
+  }
+  res.json({ apiKey: rotateUserApiKey(id) });
 });
 
 // ── Announcements ─────────────────────────────────────────────────────────
@@ -366,6 +443,58 @@ adminRouter.delete('/announcements/:id', (req: Request, res: Response) => {
     return;
   }
   res.json({ success: true });
+});
+
+// ── The unguessable URL the panel lives on ────────────────────────────────
+adminRouter.get('/path', (_req: Request, res: Response) => {
+  res.json({ path: adminPath() });
+});
+
+// ── Deployment-wide access settings ───────────────────────────────────────
+adminRouter.get('/settings/access', (_req: Request, res: Response) => {
+  res.json(accessSettings());
+});
+
+adminRouter.patch('/settings/access', (req: Request, res: Response) => {
+  const parsed = z.object({
+    signupOpen: z.boolean().optional(),
+    defaultApiAccess: z.boolean().optional(),
+    // null clears the cap; a positive integer sets it.
+    defaultDailyLimit: z.number().int().positive().nullable().optional(),
+  }).safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: { message: parsed.error.errors.map(e => e.message).join(', ') } });
+    return;
+  }
+  if (parsed.data.signupOpen !== undefined) setSignupOpen(parsed.data.signupOpen);
+  if (parsed.data.defaultApiAccess !== undefined) setDefaultApiAccess(parsed.data.defaultApiAccess);
+  if (parsed.data.defaultDailyLimit !== undefined) setDefaultDailyLimit(parsed.data.defaultDailyLimit);
+  res.json(accessSettings());
+});
+
+// Re-probe one key (the panel's refresh button). Same verdict the periodic
+// checker would reach, just without waiting for it.
+adminRouter.post('/keys/:id/check', async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: { message: 'Invalid key id' } });
+    return;
+  }
+  const existing = getDb().prepare('SELECT id FROM api_keys WHERE id = ?').get(id) as { id: number } | undefined;
+  if (!existing) {
+    res.status(404).json({ error: { message: 'No such key' } });
+    return;
+  }
+  const status = await checkKeyHealth(id);
+  res.json({ status });
+});
+
+// ── Probe every provider key now ──────────────────────────────────────────
+// The periodic checker runs every few minutes; an operator who just pasted a
+// key (or suspects a provider outage) should not have to wait for it.
+adminRouter.post('/health/check-all', async (_req: Request, res: Response) => {
+  const result = await checkAllKeys({ force: true, manual: true });
+  res.json({ success: true, checked: result.checkedKeyIds.length, skipped: result.skippedKeyIds.length });
 });
 
 // ── Who am I (used by the panel's header and by isAdminUser consumers) ─────

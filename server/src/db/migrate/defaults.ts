@@ -47,6 +47,7 @@ import * as requestFailureAttribution from '../migrations/20261017_233153_reques
 import * as removeAurayProvider from '../migrations/20261019_000001_remove_auray_provider.js';
 import * as keyLastHealthyAt from '../migrations/20261020_000001_key_last_healthy_at.js';
 import * as rolesAndAnnouncements from '../migrations/20261027_000001_roles_and_announcements.js';
+import * as adminConsole from '../migrations/20261028_000001_admin_console.js';
 
 export interface MigrationModule {
   up(db: Db): void;
@@ -106,6 +107,7 @@ export const REQUEST_FAILURE_ATTRIBUTION_FILENAME = '20261017_233153_request_fai
 export const REMOVE_AURAY_PROVIDER_FILENAME = '20261019_000001_remove_auray_provider.ts';
 export const KEY_LAST_HEALTHY_AT_FILENAME = '20261020_000001_key_last_healthy_at.ts';
 export const ROLES_AND_ANNOUNCEMENTS_FILENAME = '20261027_000001_roles_and_announcements.ts';
+export const ADMIN_CONSOLE_FILENAME = '20261028_000001_admin_console.ts';
 
 export const DEFAULT_MIGRATIONS: readonly DefaultMigration[] = [
   { filename: LEGACY_BASELINE_FILENAME, module: legacyBaseline },
@@ -156,4 +158,5 @@ export const DEFAULT_MIGRATIONS: readonly DefaultMigration[] = [
   { filename: REMOVE_AURAY_PROVIDER_FILENAME, module: removeAurayProvider },
   { filename: KEY_LAST_HEALTHY_AT_FILENAME, module: keyLastHealthyAt },
   { filename: ROLES_AND_ANNOUNCEMENTS_FILENAME, module: rolesAndAnnouncements },
+  { filename: ADMIN_CONSOLE_FILENAME, module: adminConsole },
 ];

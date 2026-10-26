@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { getDb } from '../db/index.js';
 import { normalizeEmail } from './auth.js';
+import { defaultApiAccess, defaultDailyLimit, usageTodayFor } from './access.js';
 
 /**
  * Dashboard roles.
@@ -131,21 +132,65 @@ export interface AdminUserRow {
   id: number;
   email: string;
   role: Role;
+  status: 'active' | 'suspended';
+  apiAccess: boolean;
+  dailyLimit: number | null;
+  requestsToday: number;
   createdAt: string;
   hasApiKey: boolean;
 }
 
 export function listUsers(): AdminUserRow[] {
   const rows = getDb().prepare(
-    'SELECT id, email, role, created_at, api_key FROM users ORDER BY id ASC',
-  ).all() as { id: number; email: string; role: string; created_at: string; api_key: string | null }[];
+    'SELECT id, email, role, status, api_access, daily_limit, created_at, api_key FROM users ORDER BY id ASC',
+  ).all() as {
+    id: number;
+    email: string;
+    role: string;
+    status: string | null;
+    api_access: number | null;
+    daily_limit: number | null;
+    created_at: string;
+    api_key: string | null;
+  }[];
+  const usage = usageTodayFor(rows.map(row => row.id));
   return rows.map(row => ({
     id: row.id,
     email: row.email,
     role: row.role === 'admin' ? 'admin' : 'user',
+    status: row.status === 'suspended' ? 'suspended' : 'active',
+    // A row that predates the column (or a half-migrated file) counts as
+    // allowed: failing open here would hand out access, failing closed would
+    // lock every existing account out of inference on upgrade.
+    apiAccess: row.api_access !== 0,
+    dailyLimit: row.daily_limit ?? null,
+    requestsToday: usage.get(row.id) ?? 0,
     createdAt: row.created_at,
     hasApiKey: !!row.api_key,
   }));
+}
+
+/** Suspend or reactivate an account. Data is kept; access is not. */
+export function setUserStatus(userId: number, status: 'active' | 'suspended'): void {
+  getDb().prepare('UPDATE users SET status = ? WHERE id = ?').run(status, userId);
+}
+
+/** Allow or deny this account the shared model pool. */
+export function setUserApiAccess(userId: number, allowed: boolean): void {
+  getDb().prepare('UPDATE users SET api_access = ? WHERE id = ?').run(allowed ? 1 : 0, userId);
+}
+
+/** Per-day request cap, or null for unlimited. */
+export function setUserDailyLimit(userId: number, limit: number | null): void {
+  getDb().prepare('UPDATE users SET daily_limit = ? WHERE id = ?').run(limit, userId);
+}
+
+/** New accounts inherit the deployment defaults chosen in the panel. */
+export function applyAccessDefaults(userId: number): void {
+  const allowed = defaultApiAccess();
+  const limit = defaultDailyLimit();
+  getDb().prepare('UPDATE users SET api_access = ?, daily_limit = ? WHERE id = ?')
+    .run(allowed ? 1 : 0, limit, userId);
 }
 
 /**

@@ -1,14 +1,11 @@
 import { Link } from 'react-router-dom'
 import {
   ArrowRight,
-  BarChart3,
   Boxes,
   Check,
-  Database,
   GitBranch,
   KeyRound,
   PlayCircle,
-  ShieldCheck,
   Sparkles,
   Terminal,
   Waypoints,
@@ -20,71 +17,48 @@ import { cn } from '@/lib/utils'
 import { AnnouncementBanner } from '@/components/announcement-banner'
 
 /**
- * The public home page: what Fluzy AI is, for someone who has not signed in yet.
+ * The public home page.
  *
- * It sits outside the dashboard shell (no navbar, no queries), so it renders
- * from static markup with no authenticated request behind it — the first paint
- * never waits on the API. `needsSetup` only changes the wording of the primary
- * call to action: a fresh deployment has no account to sign in with yet, so
- * "Create account" is the honest label there, while a claimed one sends people
- * to the sign-in form.
+ * Three jobs, in order: say what Fluzy AI is in one line, show the one code
+ * block that proves it, and offer Sign in / Create account at every scroll
+ * depth. Everything else is deliberately short — a landing page that needs to be
+ * read is a landing page nobody reads.
  *
- * Copy is English-only on purpose. It is a marketing surface rather than app
- * chrome, it changes far more often than the dashboard's strings, and shipping
- * sixty translations of a sentence that is rewritten weekly would leave every
- * locale permanently stale.
+ * It renders outside the dashboard shell with no authenticated request behind
+ * the first paint, so the page cannot be blocked by an API that is warming up.
+ * `needsSetup` only changes the primary call to action's wording: a fresh
+ * deployment has no account to sign in with yet.
+ *
+ * Copy is English-only on purpose — a marketing surface changes far more often
+ * than the dashboard's strings.
  */
 
-const FEATURES = [
+const VALUE_PROPS = [
   {
     icon: Waypoints,
-    title: 'One endpoint, every provider',
-    body: 'Groq, Gemini, Cerebras, Mistral, OpenRouter, NVIDIA, Ollama and dozens more behind a single OpenAI-compatible /v1 surface.',
+    title: 'One endpoint',
+    body: 'Groq, Gemini, Cerebras, Mistral, OpenRouter, NVIDIA, Ollama and dozens more behind one OpenAI-compatible /v1.',
   },
   {
     icon: GitBranch,
     title: 'Automatic failover',
-    body: 'When a model is rate-limited, out of quota or down, the router moves the request to the next healthy provider — mid-stream, without the client noticing.',
-  },
-  {
-    icon: BarChart3,
-    title: 'Quotas you can see',
-    body: 'Per-provider request and token budgets, cooldowns and headroom, so free tiers get used before they get exhausted.',
+    body: 'Rate-limited, out of quota, or down? The request moves to the next healthy provider mid-stream.',
   },
   {
     icon: Boxes,
     title: 'Every modality',
-    body: 'Chat, embeddings, images, video, audio, transcription, search and agent runs — plus Anthropic, Gemini and MCP compatibility surfaces.',
-  },
-  {
-    icon: Database,
-    title: 'Your data stays yours',
-    body: 'One SQLite file you own, with encrypted provider keys at rest. Self-host it, run it in Docker, or deploy it serverless on Vercel with a Supabase snapshot.',
-  },
-  {
-    icon: ShieldCheck,
-    title: 'A key per account',
-    body: 'Every account gets its own /v1 key. Rotate yours and only your clients change — nobody else on the deployment notices.',
+    body: 'Chat, embeddings, images, video, audio, search and agent runs — plus Anthropic, Gemini and MCP surfaces.',
   },
 ]
 
 const STEPS = [
-  {
-    title: 'Create your account',
-    body: 'One account per person, with its own API key. Provider keys are shared and managed by the deployment admin, so every model is available to you on day one.',
-  },
-  {
-    title: 'Call every model',
-    body: 'The admin adds the free-tier provider keys once — Fluzy AI verifies each and learns the models it serves — and they are live for every account. Hosting it yourself? You are the admin.',
-  },
-  {
-    title: 'Point your client at /v1',
-    body: 'Use your key from the dashboard anywhere an OpenAI base URL is accepted.',
-  },
+  { title: 'Create your account', body: 'One account, one API key of your own.' },
+  { title: 'Use every model', body: 'The provider pool is shared, so the models are ready when you are.' },
+  { title: 'Point your client at /v1', body: 'Any OpenAI base URL works. Send model "auto" and let the router choose.' },
 ]
 
 const PROVIDERS = [
-  'Groq', 'Google Gemini', 'Cerebras', 'Mistral', 'OpenRouter', 'NVIDIA NIM',
+  'Groq', 'Gemini', 'Cerebras', 'Mistral', 'OpenRouter', 'NVIDIA NIM',
   'Together', 'Hyperbolic', 'SambaNova', 'Fireworks', 'Ollama', 'LM Studio',
 ]
 
@@ -104,145 +78,96 @@ export function LandingPage({ needsSetup }: { needsSetup: boolean }) {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur">
-        <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-5">
+      <header className="sticky top-0 z-40 border-b border-border/60 bg-background/85 backdrop-blur">
+        <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-4 px-5">
           <Link to="/" className="flex items-center gap-2.5">
             <span className="inline-block size-2.5 rounded-full bg-foreground" />
             <span className="text-sm font-semibold tracking-tight">Fluzy AI</span>
-            <span className="hidden text-[11px] text-muted-foreground sm:inline">by Ritam Das</span>
           </Link>
-          <nav className="flex items-center gap-1.5">
+
+          <nav className="ms-4 hidden items-center gap-5 text-[13px] text-muted-foreground md:flex">
+            <a href="#features" className="transition-colors hover:text-foreground">Features</a>
+            <a href="#providers" className="transition-colors hover:text-foreground">Providers</a>
+            <a href="#how-it-works" className="transition-colors hover:text-foreground">How it works</a>
             <a
-              href="#how-it-works"
-              className="hidden rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground sm:block"
+              href="https://github.com/frRitamDas/fluzyai"
+              target="_blank"
+              rel="noreferrer"
+              className="transition-colors hover:text-foreground"
             >
-              How it works
+              Source
             </a>
+          </nav>
+
+          <div className="ms-auto flex items-center gap-1.5">
             <Link to={secondaryTo} className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'h-9 px-3')}>
               {secondaryLabel}
             </Link>
             <Link to={primaryTo} className={cn(buttonVariants({ size: 'sm' }), 'h-9 px-3.5')}>
               {primaryLabel}
-              <ArrowRight className="ms-1 size-3.5" aria-hidden />
             </Link>
-          </nav>
+          </div>
         </div>
       </header>
 
-      {/* Operator notices (maintenance, a provider outage) reach visitors before
-          they create an account, not only after they sign in. */}
+      {/* Operator notices reach visitors before they create an account. */}
       <AnnouncementBanner />
 
       <main>
-        {/* Hero */}
+        {/* ── Hero ─────────────────────────────────────────────────────── */}
         <section className="relative overflow-hidden">
-          {/* A faint wash of the foreground colour behind the headline. It has
-              to be the foreground and not the accent: accent is near-white in
-              the light theme, so the glow would be invisible there. */}
           <div
             aria-hidden
-            className="pointer-events-none absolute inset-x-0 -top-48 h-[30rem] bg-[radial-gradient(ellipse_at_top,var(--color-foreground),transparent_65%)] opacity-[0.07] dark:opacity-[0.12]"
+            className="pointer-events-none absolute inset-x-0 -top-56 h-[32rem] bg-[radial-gradient(ellipse_at_top,var(--color-foreground),transparent_65%)] opacity-[0.06] dark:opacity-[0.12]"
           />
-          <div className="relative mx-auto w-full max-w-6xl px-5 pt-16 pb-14 sm:pt-24">
-            <div className="mx-auto max-w-3xl text-center">
+          <div className="relative mx-auto grid w-full max-w-6xl gap-10 px-5 pt-14 pb-12 lg:grid-cols-[1.05fr_minmax(0,1fr)] lg:items-center lg:gap-14 lg:pt-20">
+            <div>
               <Badge variant="outline" className="mb-5 h-6 gap-1.5 px-2.5 text-[11px]">
                 <Sparkles className="size-3" aria-hidden />
-                OpenAI-compatible · self-hosted · free tiers first
+                Free tiers first · OpenAI-compatible
               </Badge>
-              <h1 className="font-heading text-4xl leading-[1.1] font-semibold tracking-tight text-balance sm:text-6xl">
+              <h1 className="font-heading text-4xl leading-[1.08] font-semibold tracking-tight text-balance sm:text-5xl lg:text-[3.4rem]">
                 One API key.
-                <br className="hidden sm:block" /> Every LLM you can use for free.
+                <br />
+                Every model you can use for free.
               </h1>
-              <p className="mx-auto mt-5 max-w-2xl text-sm leading-relaxed text-muted-foreground text-pretty sm:text-base">
-                Fluzy AI is a local-first gateway for the free tiers of dozens of model providers. Keep your keys in one
-                place, call a single <code className="rounded bg-muted px-1 py-0.5 font-mono text-[0.9em]">/v1</code>{' '}
-                endpoint, and let the router find a provider that still has quota left.
+              <p className="mt-5 max-w-lg text-[15px] leading-relaxed text-muted-foreground text-pretty">
+                Fluzy AI puts the free tiers of dozens of providers behind a single{' '}
+                <code className="rounded bg-muted px-1 py-0.5 font-mono text-[0.9em]">/v1</code> endpoint, and moves
+                each request to a provider that still has quota.
               </p>
-              <div className="mt-8 flex flex-col items-center justify-center gap-2.5 sm:flex-row">
+
+              <div className="mt-7 flex flex-col gap-2.5 sm:flex-row">
                 <Link to={primaryTo} className={cn(buttonVariants({ size: 'lg' }), 'h-11 w-full px-6 sm:w-auto')}>
-                  {needsSetup ? 'Create your account' : 'Sign in to the dashboard'}
+                  {needsSetup ? 'Create your account' : 'Sign in'}
                   <ArrowRight className="ms-1.5 size-4" aria-hidden />
                 </Link>
                 <Link
                   to={secondaryTo}
                   className={cn(buttonVariants({ variant: 'outline', size: 'lg' }), 'h-11 w-full px-6 sm:w-auto')}
                 >
-                  {needsSetup ? 'I already have an account' : 'Create an account'}
+                  {needsSetup ? 'Sign in' : 'Create an account'}
                 </Link>
               </div>
-              <p className="mt-4 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-                <Check className="size-3.5" aria-hidden />
-                No credit card. No telemetry. The database is a file on your machine.
-              </p>
-            </div>
 
-            {/* Provider strip */}
-            <div className="mt-14">
-              <p className="text-center text-[11px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
-                Speaks to
-              </p>
-              <ul className="mx-auto mt-4 flex max-w-4xl flex-wrap items-center justify-center gap-x-2 gap-y-2">
-                {PROVIDERS.map(name => (
-                  <li
-                    key={name}
-                    className="rounded-full border border-border/70 bg-card/60 px-3 py-1 text-xs text-muted-foreground"
-                  >
-                    {name}
+              <ul className="mt-6 flex flex-wrap gap-x-4 gap-y-1.5 text-[12px] text-muted-foreground">
+                {['No credit card', 'No telemetry', 'Your keys, encrypted at rest'].map(item => (
+                  <li key={item} className="flex items-center gap-1.5">
+                    <Check className="size-3.5" aria-hidden />
+                    {item}
                   </li>
                 ))}
-                <li className="rounded-full border border-dashed border-border/70 px-3 py-1 text-xs text-muted-foreground">
-                  + many more
-                </li>
               </ul>
             </div>
-          </div>
-        </section>
 
-        {/* Features */}
-        <section className="mx-auto w-full max-w-6xl px-5 py-6">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {FEATURES.map(({ icon: Icon, title, body }) => (
-              <article key={title} className="rounded-3xl border bg-card p-5">
-                <div className="mb-3 inline-flex size-9 items-center justify-center rounded-2xl bg-muted">
-                  <Icon className="size-4.5" aria-hidden />
-                </div>
-                <h3 className="font-heading text-sm font-medium">{title}</h3>
-                <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">{body}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        {/* How it works */}
-        <section id="how-it-works" className="mx-auto w-full max-w-6xl scroll-mt-20 px-5 py-14">
-          <div className="grid gap-8 lg:grid-cols-2 lg:items-center">
-            <div>
-              <h2 className="font-heading text-2xl font-semibold tracking-tight sm:text-3xl">
-                Three steps to a working endpoint
-              </h2>
-              <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
-                The dashboard walks you through it the first time you sign in. Everything below is editable later —
-                routing order, fallback chains, budgets, cooldowns.
-              </p>
-              <ol className="mt-7 space-y-5">
-                {STEPS.map((step, index) => (
-                  <li key={step.title} className="flex gap-3.5">
-                    <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-medium">
-                      {index + 1}
-                    </span>
-                    <div>
-                      <h3 className="text-sm font-medium">{step.title}</h3>
-                      <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">{step.body}</p>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            </div>
-
-            <div className="rounded-3xl border bg-card p-5">
-              <div className="mb-3 flex items-center gap-2">
-                <Terminal className="size-4" aria-hidden />
+            {/* The proof: one request, no provider SDK, no config. */}
+            <div className="rounded-3xl border bg-card p-4 shadow-sm">
+              <div className="flex items-center gap-2 px-1 pb-3">
+                <Terminal className="size-4 text-muted-foreground" aria-hidden />
                 <span className="text-xs font-medium">Any OpenAI client works</span>
+                <span className="ms-auto rounded-full border px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
+                  POST /v1/chat/completions
+                </span>
               </div>
               <pre className="overflow-x-auto rounded-2xl bg-muted/60 p-4 text-[11.5px] leading-relaxed">
                 <code>{CURL}</code>
@@ -251,14 +176,13 @@ export function LandingPage({ needsSetup }: { needsSetup: boolean }) {
                 <div className="flex items-start gap-2 rounded-2xl border border-border/60 p-3">
                   <KeyRound className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden />
                   <p className="text-[12px] leading-relaxed text-muted-foreground">
-                    Send <code className="font-mono">model: "auto"</code> and let the router choose, or name a model
-                    explicitly.
+                    Your own key, revocable on its own.
                   </p>
                 </div>
                 <div className="flex items-start gap-2 rounded-2xl border border-border/60 p-3">
                   <PlayCircle className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden />
                   <p className="text-[12px] leading-relaxed text-muted-foreground">
-                    Try it in the built-in Playground before wiring an app to it.
+                    Or try it in the built-in Playground first.
                   </p>
                 </div>
               </div>
@@ -266,18 +190,70 @@ export function LandingPage({ needsSetup }: { needsSetup: boolean }) {
           </div>
         </section>
 
-        {/* Closing call to action */}
+        {/* ── Value props ──────────────────────────────────────────────── */}
+        <section id="features" className="mx-auto w-full max-w-6xl scroll-mt-20 px-5 pb-4">
+          <div className="grid gap-3 sm:grid-cols-3">
+            {VALUE_PROPS.map(({ icon: Icon, title, body }) => (
+              <article key={title} className="rounded-3xl border bg-card p-5">
+                <div className="mb-3 inline-flex size-9 items-center justify-center rounded-2xl bg-muted">
+                  <Icon className="size-4.5" aria-hidden />
+                </div>
+                <h2 className="font-heading text-sm font-medium">{title}</h2>
+                <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">{body}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        {/* ── Providers ────────────────────────────────────────────────── */}
+        <section id="providers" className="mx-auto w-full max-w-6xl scroll-mt-20 px-5 py-12">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="font-heading text-lg font-semibold tracking-tight">Speaks to the free tiers</h2>
+            <p className="text-[12px] text-muted-foreground">Add a key once — every account can call it.</p>
+          </div>
+          <ul className="mt-4 flex flex-wrap gap-1.5">
+            {PROVIDERS.map(name => (
+              <li
+                key={name}
+                className="rounded-full border border-border/70 bg-card/60 px-3 py-1 text-xs text-muted-foreground"
+              >
+                {name}
+              </li>
+            ))}
+            <li className="rounded-full border border-dashed border-border/70 px-3 py-1 text-xs text-muted-foreground">
+              + many more
+            </li>
+          </ul>
+        </section>
+
+        {/* ── How it works ─────────────────────────────────────────────── */}
+        <section id="how-it-works" className="mx-auto w-full max-w-6xl scroll-mt-20 px-5 pb-14">
+          <h2 className="font-heading text-lg font-semibold tracking-tight">Three steps</h2>
+          <ol className="mt-4 grid gap-3 sm:grid-cols-3">
+            {STEPS.map((step, index) => (
+              <li key={step.title} className="rounded-3xl border bg-card p-5">
+                <span className="flex size-6 items-center justify-center rounded-full border text-[11px] font-medium">
+                  {index + 1}
+                </span>
+                <h3 className="mt-3 text-sm font-medium">{step.title}</h3>
+                <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">{step.body}</p>
+              </li>
+            ))}
+          </ol>
+        </section>
+
+        {/* ── Closing call to action ───────────────────────────────────── */}
         <section className="mx-auto w-full max-w-6xl px-5 pb-20">
-          <div className="rounded-3xl border bg-card px-6 py-10 text-center">
+          <div className="flex flex-col items-center gap-4 rounded-3xl border bg-card px-6 py-10 text-center">
             <h2 className="font-heading text-2xl font-semibold tracking-tight">
-              {needsSetup ? 'Set up your dashboard' : 'Welcome back'}
+              {needsSetup ? 'Set up your dashboard' : 'Ready when you are'}
             </h2>
-            <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+            <p className="max-w-md text-sm text-muted-foreground">
               {needsSetup
-                ? 'Create the account that will own this deployment. It takes one email and a password.'
-                : 'Sign in to manage keys, routing, quotas and analytics.'}
+                ? 'Create the account that will own this deployment — one email and a password.'
+                : 'Sign in to call every model with your own key, or create an account in a few seconds.'}
             </p>
-            <div className="mt-6 flex flex-col items-center justify-center gap-2.5 sm:flex-row">
+            <div className="flex flex-col gap-2.5 sm:flex-row">
               <Link to={primaryTo} className={cn(buttonVariants({ size: 'lg' }), 'h-11 w-full px-6 sm:w-auto')}>
                 {needsSetup ? 'Create your account' : 'Sign in'}
                 <ArrowRight className="ms-1.5 size-4" aria-hidden />

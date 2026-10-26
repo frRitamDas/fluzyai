@@ -1,18 +1,27 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  Activity,
+  AlertTriangle,
   Check,
+  Copy,
+  Database,
+  Gauge,
   KeyRound,
   Loader2,
   Megaphone,
   Plus,
+  RefreshCw,
   ShieldCheck,
   Trash2,
+  UserMinus,
+  UserPlus,
   Users,
   X,
 } from 'lucide-react'
 
 import { apiFetch } from '@/lib/api'
+import { copyText } from '@/lib/clipboard'
 import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,19 +33,30 @@ import { SegmentedControl } from '@/components/ui/segmented-control'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 /**
- * The admin panel.
+ * The admin console.
  *
- * Everything here is deployment-wide: the provider keys the router draws on for
- * every account, who else may administer it, and the banner everyone sees.
- * A key added here is in the shared pool the moment the request returns — the
- * same table the router reads — which is what makes it available to every user
- * without a publish step.
+ * One person runs the deployment; everyone else uses it. Everything here is
+ * deployment-wide: the shared provider pool, who may call it and how much, the
+ * accounts, and the banner. A key added here is the same `api_keys` row the
+ * router reads, so it is live for every account on the next request — no
+ * publish step, no second code path.
  *
- * Reachable only by an admin session; the server enforces that on /api/admin, so
- * hiding the nav entry is presentation, not the control.
+ * Rendered on an unguessable path (see useAdminPath) and gated by the server on
+ * every request; hiding it is convenience, requireAdmin is the control.
  */
 
-type Tab = 'providers' | 'users' | 'announcements'
+type Tab = 'overview' | 'providers' | 'accounts' | 'announcements' | 'settings'
+
+interface Persistence {
+  configured: boolean
+  bucket: string | null
+  object: string | null
+  lastRestoreAt: string | null
+  lastUploadAt: string | null
+  pendingWrite: boolean
+  lastError: string | null
+  staleSince: string | null
+}
 
 interface Overview {
   users: { total: number; admins: number }
@@ -44,6 +64,8 @@ interface Overview {
   models: { total: number; enabled: number }
   requests: { total: number; today: number }
   announcements: { active: number }
+  persistence: Persistence
+  access: { signupOpen: boolean; defaultApiAccess: boolean; defaultDailyLimit: number | null; suspended: number; withoutApiAccess: number }
 }
 
 interface ProviderOption {
@@ -72,6 +94,10 @@ interface UserRow {
   id: number
   email: string
   role: 'admin' | 'user'
+  status: 'active' | 'suspended'
+  apiAccess: boolean
+  dailyLimit: number | null
+  requestsToday: number
   createdAt: string
   hasApiKey: boolean
 }
@@ -85,80 +111,207 @@ interface Announcement {
   createdAt: string
 }
 
-function StatCard({ label, value, hint }: { label: string; value: number | string; hint?: string }) {
+// ── Small shared pieces ───────────────────────────────────────────────────
+
+function Section({ title, hint, action, children }: {
+  title: React.ReactNode
+  hint?: string
+  action?: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <section className="rounded-3xl border bg-card p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-medium">{title}</h2>
+          {hint && <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">{hint}</p>}
+        </div>
+        {action}
+      </div>
+      <div className="mt-4">{children}</div>
+    </section>
+  )
+}
+
+function Stat({ label, value, hint, tone }: { label: string; value: number | string; hint?: string; tone?: 'warn' }) {
   return (
     <div className="rounded-2xl border bg-card p-4">
       <p className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{label}</p>
-      <p className="mt-1 font-heading text-2xl font-semibold tabular-nums">{value}</p>
+      <p className={`mt-1 font-heading text-2xl font-semibold tabular-nums ${tone === 'warn' ? 'text-amber-600 dark:text-amber-400' : ''}`}>
+        {value}
+      </p>
       {hint && <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p>}
     </div>
   )
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status, enabled }: { status: string; enabled: boolean }) {
+  if (!enabled) {
+    return <Badge variant="outline" className="h-5 border-amber-500/40 text-amber-600 dark:text-amber-400">off</Badge>
+  }
   const tone =
     status === 'healthy'
       ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
       : status === 'invalid' || status === 'error'
         ? 'border-destructive/30 bg-destructive/10 text-destructive'
         : 'border-border text-muted-foreground'
-  return (
-    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] ${tone}`}>
-      {status}
-    </span>
-  )
+  return <Badge variant="outline" className={`h-5 ${tone}`}>{status}</Badge>
 }
 
-export default function AdminPage() {
-  const [tab, setTab] = useState<Tab>('providers')
+function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (value: boolean) => void; label: string }) {
+  return <Switch checked={checked} onCheckedChange={onChange} aria-label={label} />
+}
 
-  const overview = useQuery<Overview>({
-    queryKey: ['admin-overview'],
-    queryFn: () => apiFetch('/api/admin/overview'),
-  })
+// ── Page ──────────────────────────────────────────────────────────────────
+
+export default function AdminPage() {
+  const [tab, setTab] = useState<Tab>('overview')
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="font-heading flex items-center gap-2 text-xl font-semibold tracking-tight">
-            <ShieldCheck className="size-5" aria-hidden />
-            Admin panel
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Manage the shared provider pool, the accounts on this deployment, and the global announcement.
-          </p>
-        </div>
+      <header>
+        <h1 className="font-heading flex items-center gap-2 text-xl font-semibold tracking-tight">
+          <ShieldCheck className="size-5" aria-hidden />
+          Admin console
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Your provider keys, who can use them, and what everyone sees. Changes apply to every account immediately.
+        </p>
       </header>
-
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <StatCard label="Accounts" value={overview.data?.users.total ?? '—'} hint={`${overview.data?.users.admins ?? '—'} admin`} />
-        <StatCard label="Provider keys" value={overview.data?.keys.total ?? '—'} hint={`${overview.data?.keys.enabled ?? '—'} enabled`} />
-        <StatCard label="Healthy" value={overview.data?.keys.healthy ?? '—'} hint="last probe ok" />
-        <StatCard label="Providers" value={overview.data?.keys.platforms ?? '—'} hint="configured" />
-        <StatCard label="Models live" value={overview.data?.models.enabled ?? '—'} hint={`${overview.data?.models.total ?? '—'} in catalog`} />
-        <StatCard label="Requests today" value={overview.data?.requests.today ?? '—'} hint={`${overview.data?.requests.total ?? '—'} all time`} />
-      </div>
 
       <SegmentedControl<Tab>
         value={tab}
         onValueChange={setTab}
         ariaLabel="Admin sections"
         options={[
+          { value: 'overview', label: 'Overview' },
           { value: 'providers', label: 'Providers & keys' },
-          { value: 'users', label: 'Accounts' },
+          { value: 'accounts', label: 'Accounts' },
           { value: 'announcements', label: 'Announcements' },
+          { value: 'settings', label: 'Access & settings' },
         ]}
       />
 
+      {tab === 'overview' && <OverviewTab onOpenProviders={() => setTab('providers')} />}
       {tab === 'providers' && <ProvidersTab />}
-      {tab === 'users' && <UsersTab />}
+      {tab === 'accounts' && <AccountsTab />}
       {tab === 'announcements' && <AnnouncementsTab />}
+      {tab === 'settings' && <SettingsTab />}
     </div>
   )
 }
 
-// ── Providers ─────────────────────────────────────────────────────────────
+// ── Overview ──────────────────────────────────────────────────────────────
+
+function OverviewTab({ onOpenProviders }: { onOpenProviders: () => void }) {
+  const queryClient = useQueryClient()
+  const overview = useQuery<Overview>({
+    queryKey: ['admin-overview'],
+    queryFn: () => apiFetch('/api/admin/overview'),
+  })
+
+  const probeAll = useMutation({
+    mutationFn: () => apiFetch<{ checked: number }>('/api/admin/health/check-all', { method: 'POST' }),
+    onSuccess: result => {
+      toast.success(`Probed ${result.checked} key${result.checked === 1 ? '' : 's'}`)
+      queryClient.invalidateQueries({ queryKey: ['admin-overview'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-keys'] })
+      queryClient.invalidateQueries({ queryKey: ['keys'] })
+    },
+  })
+
+  const data = overview.data
+  const p = data?.persistence
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <Stat label="Accounts" value={data?.users.total ?? '—'} hint={`${data?.users.admins ?? '—'} admin`} />
+        <Stat label="Provider keys" value={data?.keys.total ?? '—'} hint={`${data?.keys.enabled ?? '—'} on`} />
+        <Stat label="Healthy" value={data?.keys.healthy ?? '—'} hint="last probe ok" />
+        <Stat label="Models live" value={data?.models.enabled ?? '—'} hint={`${data?.models.total ?? '—'} known`} />
+        <Stat label="Requests today" value={data?.requests.today ?? '—'} hint={`${data?.requests.total ?? '—'} all time`} />
+        <Stat
+          label="Suspended"
+          value={data?.access?.suspended ?? '—'}
+          hint={`${data?.access?.withoutApiAccess ?? '—'} without API`}
+          tone={(data?.access?.suspended ?? 0) > 0 ? 'warn' : undefined}
+        />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Section
+          title="Provider pool"
+          hint="What every account can call right now."
+          action={
+            <Button size="sm" variant="outline" onClick={onOpenProviders}>
+              <Plus className="size-3.5" /> Add a key
+            </Button>
+          }
+        >
+          <div className="flex flex-wrap items-center gap-2 text-[12px] text-muted-foreground">
+            <Badge variant="outline">{data?.keys.platforms ?? 0} providers</Badge>
+            <Badge variant="outline">{data?.models.enabled ?? 0} models</Badge>
+            <Button size="sm" variant="ghost" className="ms-auto h-8" onClick={() => probeAll.mutate()} disabled={probeAll.isPending}>
+              {probeAll.isPending
+                ? <Loader2 className="me-1.5 size-3.5 animate-spin" aria-hidden />
+                : <RefreshCw className="me-1.5 size-3.5" aria-hidden />}
+              Re-check every key
+            </Button>
+          </div>
+        </Section>
+
+        <Section
+          title={
+            <span className="flex items-center gap-2">
+              <Database className="size-4" aria-hidden /> Saved state
+            </span>
+          }
+        >
+          {p?.configured ? (
+            <dl className="space-y-1.5 text-[12px]">
+              <div className="flex justify-between gap-3">
+                <dt className="text-muted-foreground">Snapshot store</dt>
+                <dd className="truncate font-mono text-[11px]">{p.bucket}/{p.object}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-muted-foreground">Last upload</dt>
+                <dd>{p.lastUploadAt ? new Date(p.lastUploadAt).toLocaleString() : 'never'}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-muted-foreground">Pending write</dt>
+                <dd>{p.pendingWrite ? 'yes — will retry' : 'no'}</dd>
+              </div>
+              {p.lastError && (
+                <div className="flex justify-between gap-3 text-amber-600 dark:text-amber-400">
+                  <dt>Last error</dt>
+                  <dd className="max-w-[60%] truncate" title={p.lastError}>{p.lastError}</dd>
+                </div>
+              )}
+              {p.staleSince && (
+                <div className="mt-2 flex items-start gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 p-2.5 text-[11px] text-amber-700 dark:text-amber-300">
+                  <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                  <span>
+                    Another instance saved a newer copy at {new Date(p.staleSince).toLocaleString()}. This one is
+                    serving older data and has stopped overwriting it — a cold start (redeploy) resyncs it.
+                  </span>
+                </div>
+              )}
+            </dl>
+          ) : (
+            <p className="text-[12px] leading-relaxed text-muted-foreground">
+              This deployment keeps its database on the local disk (self-hosted mode), so every change is already
+              permanent. On a serverless host, configure the Supabase snapshot env vars and this panel will report
+              each upload.
+            </p>
+          )}
+        </Section>
+      </div>
+    </div>
+  )
+}
+
+// ── Providers & keys ──────────────────────────────────────────────────────
 
 function ProvidersTab() {
   const queryClient = useQueryClient()
@@ -182,9 +335,9 @@ function ProvidersTab() {
   const selected = byPlatform.get(platform)
 
   function invalidate() {
-    queryClient.invalidateQueries({ queryKey: ['admin-keys'] })
-    queryClient.invalidateQueries({ queryKey: ['admin-providers'] })
-    queryClient.invalidateQueries({ queryKey: ['admin-overview'] })
+    for (const key of ['admin-keys', 'admin-providers', 'admin-overview', 'keys', 'health']) {
+      queryClient.invalidateQueries({ queryKey: [key] })
+    }
   }
 
   const addKey = useMutation({
@@ -196,8 +349,8 @@ function ProvidersTab() {
     onSuccess: res => {
       toast.success(
         res.key.status === 'healthy'
-          ? `${res.key.platform} key verified — ${res.modelsAvailable} model${res.modelsAvailable === 1 ? '' : 's'} available to everyone`
-          : `${res.key.platform} key added — it will be probed on the next health cycle`,
+          ? `${res.key.platform} verified — ${res.modelsAvailable} model${res.modelsAvailable === 1 ? '' : 's'} live for every account`
+          : `${res.key.platform} added — reachable models: ${res.modelsAvailable}. It will be probed again shortly.`,
       )
       setApiKey('')
       setLabel('')
@@ -205,37 +358,36 @@ function ProvidersTab() {
     },
   })
 
-  const toggleKey = useMutation({
-    mutationFn: (input: { id: number; enabled: boolean }) =>
-      apiFetch(`/api/admin/keys/${input.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ enabled: input.enabled }),
-      }),
+  const patchKey = useMutation({
+    mutationFn: (input: { id: number; enabled?: boolean }) =>
+      apiFetch(`/api/admin/keys/${input.id}`, { method: 'PATCH', body: JSON.stringify(input) }),
     onSuccess: invalidate,
+  })
+
+  const probeKey = useMutation({
+    mutationFn: (id: number) => apiFetch(`/api/admin/keys/${id}/check`, { method: 'POST' }),
+    onSuccess: () => {
+      toast.success('Probe finished')
+      invalidate()
+    },
   })
 
   const removeKey = useMutation({
     mutationFn: (id: number) => apiFetch(`/api/admin/keys/${id}`, { method: 'DELETE' }),
     onSuccess: () => {
-      toast.success('Key removed from the shared pool')
+      toast.success('Key removed from every account')
       invalidate()
     },
   })
 
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
-      <section className="h-fit rounded-3xl border bg-card p-5">
-        <h2 className="flex items-center gap-2 text-sm font-medium">
-          <Plus className="size-4" aria-hidden />
-          Add a provider key
-        </h2>
-        <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
-          Goes straight into the shared pool: every account can call these models as soon as this returns, no publish
-          step.
-        </p>
-
+      <Section
+        title="Add a provider key"
+        hint="Goes straight into the shared pool — every account can call these models as soon as this returns."
+      >
         <form
-          className="mt-4 space-y-3"
+          className="space-y-3"
           onSubmit={e => {
             e.preventDefault()
             if (!platform) {
@@ -249,9 +401,7 @@ function ProvidersTab() {
             <Label className="text-xs" htmlFor="admin-provider">Provider</Label>
             <Select value={platform} onValueChange={v => setPlatform(v ?? '')}>
               <SelectTrigger id="admin-provider" className="w-full">
-                <SelectValue>
-                  {(v: string) => byPlatform.get(v)?.name ?? 'Choose a provider…'}
-                </SelectValue>
+                <SelectValue>{(v: string) => byPlatform.get(v)?.name ?? 'Choose a provider…'}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {(providers.data?.providers ?? []).map(p => (
@@ -259,7 +409,7 @@ function ProvidersTab() {
                     <span className="flex w-full items-center justify-between gap-3">
                       <span>{p.name}</span>
                       <span className="text-[11px] text-muted-foreground">
-                        {p.kind === 'search' ? 'search' : p.keyCount > 0 ? `${p.keyCount} key` : ''}
+                        {p.keyCount > 0 ? `${p.keyCount} key${p.keyCount === 1 ? '' : 's'}` : p.kind === 'search' ? 'search' : ''}
                       </span>
                     </span>
                   </SelectItem>
@@ -279,72 +429,82 @@ function ProvidersTab() {
               placeholder={selected?.keyless ? 'not needed for this provider' : 'paste the provider key'}
               disabled={selected?.keyless === true}
             />
-            <p className="text-[11px] text-muted-foreground">
-              Stored encrypted. Never shown again in full.
-            </p>
+            <p className="text-[11px] text-muted-foreground">Encrypted at rest, never shown again in full.</p>
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs" htmlFor="admin-key-label">Label <span className="text-muted-foreground">(optional)</span></Label>
-            <Input
-              id="admin-key-label"
-              value={label}
-              onChange={e => setLabel(e.target.value)}
-              placeholder="e.g. personal free tier"
-            />
+            <Label className="text-xs" htmlFor="admin-key-label">
+              Label <span className="text-muted-foreground">(optional)</span>
+            </Label>
+            <Input id="admin-key-label" value={label} onChange={e => setLabel(e.target.value)} placeholder="e.g. free tier" />
           </div>
 
           <Button type="submit" className="w-full" disabled={addKey.isPending || !platform}>
-            {addKey.isPending ? <Loader2 className="me-1.5 size-3.5 animate-spin" aria-hidden /> : null}
+            {addKey.isPending && <Loader2 className="me-1.5 size-3.5 animate-spin" aria-hidden />}
             {addKey.isPending ? 'Verifying with the provider…' : 'Add to the shared pool'}
           </Button>
+          {addKey.isError && (
+            <p className="text-[11px] text-destructive">{(addKey.error as Error).message}</p>
+          )}
         </form>
-      </section>
+      </Section>
 
-      <section className="rounded-3xl border bg-card p-5">
-        <div className="flex items-center justify-between">
-          <h2 className="flex items-center gap-2 text-sm font-medium">
-            <KeyRound className="size-4" aria-hidden />
-            Shared pool
-          </h2>
-          <span className="text-[11px] text-muted-foreground">
-            {pool.data?.keys.length ?? 0} key{(pool.data?.keys.length ?? 0) === 1 ? '' : 's'}
-          </span>
-        </div>
-
+      <Section
+        title="Shared pool"
+        hint="Turning a key off stops every account from using that provider, without deleting the credential."
+        action={<Badge variant="outline">{pool.data?.keys.length ?? 0}</Badge>}
+      >
         {pool.isLoading && (
-          <p className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
+          <p className="flex items-center gap-2 text-xs text-muted-foreground">
             <Loader2 className="size-3.5 animate-spin" aria-hidden /> Loading…
           </p>
         )}
         {!pool.isLoading && (pool.data?.keys.length ?? 0) === 0 && (
-          <p className="mt-4 rounded-2xl border border-dashed p-6 text-center text-xs text-muted-foreground">
+          <p className="rounded-2xl border border-dashed p-6 text-center text-xs text-muted-foreground">
             No provider keys yet. Add one on the left and its models become available to every account.
           </p>
         )}
 
-        <ul className="mt-3 divide-y">
+        <ul className="divide-y">
           {(pool.data?.keys ?? []).map(key => (
             <li key={key.id} className="flex flex-wrap items-center gap-2 py-2.5">
               <div className="min-w-0 flex-1">
-                <p className="flex items-center gap-2 text-[13px] font-medium">
+                <p className="flex flex-wrap items-center gap-2 text-[13px] font-medium">
                   {byPlatform.get(key.platform)?.name ?? key.platform}
-                  <StatusBadge status={key.status} />
+                  <StatusBadge status={key.status} enabled={key.enabled} />
                   {key.lastError && (
-                    <span className="truncate text-[11px] font-normal text-destructive" title={key.lastError}>
+                    <span className="max-w-[22rem] truncate text-[11px] font-normal text-destructive" title={key.lastError}>
                       {key.lastError}
                     </span>
                   )}
                 </p>
                 <p className="text-[11px] text-muted-foreground">
-                  {key.maskedKey}
+                  <span className="font-mono">{key.maskedKey}</span>
                   {key.label ? ` · ${key.label}` : ''}
+                  {key.lastCheckedAt ? ` · checked ${key.lastCheckedAt}` : ''}
                 </p>
+                {!key.enabled && key.status === 'invalid' && (
+                  <p className="mt-0.5 text-[11px] text-amber-600 dark:text-amber-400">
+                    Turned off automatically after repeated failed probes — the provider rejects this credential.
+                    Fix the key and switch it back on, or re-check to revive it.
+                  </p>
+                )}
               </div>
-              <Switch
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2 text-muted-foreground"
+                onClick={() => probeKey.mutate(key.id)}
+                disabled={probeKey.isPending}
+                aria-label={`Re-check ${key.platform} key`}
+                title="Re-check now"
+              >
+                <RefreshCw className="size-3.5" aria-hidden />
+              </Button>
+              <Toggle
                 checked={key.enabled}
-                onCheckedChange={enabled => toggleKey.mutate({ id: key.id, enabled })}
-                aria-label={`Enable ${key.platform}`}
+                onChange={enabled => patchKey.mutate({ id: key.id, enabled })}
+                label={`Enable ${key.platform}`}
               />
               <Button
                 variant="ghost"
@@ -358,73 +518,170 @@ function ProvidersTab() {
             </li>
           ))}
         </ul>
-      </section>
+      </Section>
     </div>
   )
 }
 
 // ── Accounts ──────────────────────────────────────────────────────────────
 
-function UsersTab() {
+function AccountsTab() {
   const queryClient = useQueryClient()
   const users = useQuery<{ users: UserRow[] }>({
     queryKey: ['admin-users'],
     queryFn: () => apiFetch('/api/admin/users'),
   })
 
-  const setRole = useMutation({
-    mutationFn: (input: { id: number; role: 'admin' | 'user' }) =>
-      apiFetch(`/api/admin/users/${input.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ role: input.role }),
-      }),
+  const update = useMutation({
+    mutationFn: (input: { id: number } & Partial<Pick<UserRow, 'role' | 'status' | 'apiAccess' | 'dailyLimit'>>) =>
+      apiFetch(`/api/admin/users/${input.id}`, { method: 'PATCH', body: JSON.stringify(input) }),
     onSuccess: () => {
-      toast.success('Account updated')
       queryClient.invalidateQueries({ queryKey: ['admin-users'] })
       queryClient.invalidateQueries({ queryKey: ['admin-overview'] })
     },
   })
 
-  return (
-    <section className="rounded-3xl border bg-card p-5">
-      <h2 className="flex items-center gap-2 text-sm font-medium">
-        <Users className="size-4" aria-hidden />
-        Accounts on this deployment
-      </h2>
-      <p className="mt-1 text-[12px] text-muted-foreground">
-        Admins manage the shared pool and can add other admins. Everyone can use every model with their own API key.
-      </p>
+  const rotate = useMutation({
+    mutationFn: (id: number) =>
+      apiFetch<{ apiKey: string }>(`/api/admin/users/${id}/rotate-key`, { method: 'POST' }),
+    onSuccess: res => {
+      // Shown once, because the point of rotating is to hand the new value over.
+      window.prompt('New API key for this account — copy it now, it will not be shown again:', res.apiKey)
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+    },
+  })
 
-      <ul className="mt-4 divide-y">
-        {(users.data?.users ?? []).map(user => (
-          <li key={user.id} className="flex flex-wrap items-center gap-2 py-2.5">
+  const rows = users.data?.users ?? []
+
+  return (
+    <Section
+      title="Accounts"
+      hint="Everyone on this deployment. API access is the shared provider pool; suspension also blocks the dashboard."
+      action={<Badge variant="outline">{rows.length}</Badge>}
+    >
+      <ul className="divide-y">
+        {rows.map(user => (
+          <li key={user.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 py-3">
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[13px] font-medium">{user.email}</p>
+              <p className="flex flex-wrap items-center gap-2 text-[13px] font-medium">
+                <span className="truncate">{user.email}</span>
+                {user.role === 'admin' && (
+                  <Badge className="h-5 gap-1"><ShieldCheck className="size-3" aria-hidden /> admin</Badge>
+                )}
+                {user.status === 'suspended' && (
+                  <Badge variant="outline" className="h-5 border-destructive/40 text-destructive">suspended</Badge>
+                )}
+                {!user.apiAccess && (
+                  <Badge variant="outline" className="h-5 border-amber-500/40 text-amber-600 dark:text-amber-400">no API access</Badge>
+                )}
+              </p>
               <p className="text-[11px] text-muted-foreground">
-                joined {user.createdAt} · {user.hasApiKey ? 'has an API key' : 'no key yet'}
+                {user.requestsToday} request{user.requestsToday === 1 ? '' : 's'} today
+                {user.dailyLimit !== null ? ` of ${user.dailyLimit}` : ' · no cap'}
+                {` · joined ${user.createdAt}`}
               </p>
             </div>
-            <Badge variant={user.role === 'admin' ? 'default' : 'outline'} className="h-5">
-              {user.role}
-            </Badge>
+
+            <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              API
+              <Toggle
+                checked={user.apiAccess}
+                onChange={apiAccess => update.mutate({ id: user.id, apiAccess })}
+                label={`API access for ${user.email}`}
+              />
+            </label>
+
+            <DailyLimitInput
+              value={user.dailyLimit}
+              onSave={dailyLimit => update.mutate({ id: user.id, dailyLimit })}
+            />
+
             <Button
               variant="outline"
               size="sm"
               className="h-8"
-              disabled={setRole.isPending}
-              onClick={() => setRole.mutate({ id: user.id, role: user.role === 'admin' ? 'user' : 'admin' })}
+              disabled={update.isPending}
+              onClick={() => update.mutate({ id: user.id, role: user.role === 'admin' ? 'user' : 'admin' })}
             >
-              {user.role === 'admin' ? 'Make user' : 'Make admin'}
+              {user.role === 'admin'
+                ? <><UserMinus className="me-1 size-3.5" aria-hidden /> Make user</>
+                : <><UserPlus className="me-1 size-3.5" aria-hidden /> Make admin</>}
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8"
+              disabled={rotate.isPending}
+              onClick={() => {
+                if (!window.confirm(`Issue ${user.email} a new API key? Their current key stops working immediately.`)) return
+                rotate.mutate(user.id)
+              }}
+              title="Replace this account's API key"
+            >
+              New key
+            </Button>
+
+            <Button
+              variant={user.status === 'suspended' ? 'outline' : 'ghost'}
+              size="sm"
+              className="h-8"
+              disabled={update.isPending}
+              onClick={() => update.mutate({ id: user.id, status: user.status === 'suspended' ? 'active' : 'suspended' })}
+            >
+              {user.status === 'suspended' ? 'Reactivate' : 'Suspend'}
             </Button>
           </li>
         ))}
       </ul>
-      {(users.data?.users.length ?? 0) === 0 && (
-        <p className="mt-4 rounded-2xl border border-dashed p-6 text-center text-xs text-muted-foreground">
-          No accounts yet.
-        </p>
+      {rows.length === 0 && (
+        <p className="rounded-2xl border border-dashed p-6 text-center text-xs text-muted-foreground">No accounts yet.</p>
       )}
-    </section>
+    </Section>
+  )
+}
+
+/** A per-account daily cap, edited in place: blank means unlimited. */
+function DailyLimitInput({ value, onSave }: { value: number | null; onSave: (value: number | null) => void }) {
+  const [draft, setDraft] = useState(value === null ? '' : String(value))
+  // Keep the field in sync when the list refreshes under the editor.
+  const shown = value === null ? '' : String(value)
+  const [lastShown, setLastShown] = useState(shown)
+  if (shown !== lastShown) {
+    setLastShown(shown)
+    setDraft(shown)
+  }
+
+  function commit() {
+    const trimmed = draft.trim()
+    if (trimmed === '') {
+      if (value !== null) onSave(null)
+      return
+    }
+    const parsed = Number.parseInt(trimmed, 10)
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setDraft(shown)
+      return
+    }
+    if (parsed !== value) onSave(parsed)
+  }
+
+  return (
+    <Input
+      className="h-8 w-24 text-[12px]"
+      inputMode="numeric"
+      placeholder="no cap"
+      aria-label="Daily request limit"
+      value={draft}
+      onChange={e => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          commit()
+        }
+      }}
+    />
   )
 }
 
@@ -442,17 +699,16 @@ function AnnouncementsTab() {
   })
 
   function invalidate() {
-    queryClient.invalidateQueries({ queryKey: ['admin-announcements'] })
-    queryClient.invalidateQueries({ queryKey: ['announcements'] })
-    queryClient.invalidateQueries({ queryKey: ['admin-overview'] })
+    for (const key of ['admin-announcements', 'announcements', 'admin-overview']) {
+      queryClient.invalidateQueries({ queryKey: [key] })
+    }
   }
 
   const create = useMutation({
-    mutationFn: () =>
-      apiFetch('/api/admin/announcements', {
-        method: 'POST',
-        body: JSON.stringify({ title, body, level }),
-      }),
+    mutationFn: () => apiFetch('/api/admin/announcements', {
+      method: 'POST',
+      body: JSON.stringify({ title, body, level }),
+    }),
     onSuccess: () => {
       toast.success('Announcement is live for everyone')
       setTitle('')
@@ -463,10 +719,7 @@ function AnnouncementsTab() {
 
   const toggle = useMutation({
     mutationFn: (input: { id: number; active: boolean }) =>
-      apiFetch(`/api/admin/announcements/${input.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ active: input.active }),
-      }),
+      apiFetch(`/api/admin/announcements/${input.id}`, { method: 'PATCH', body: JSON.stringify({ active: input.active }) }),
     onSuccess: invalidate,
   })
 
@@ -477,16 +730,12 @@ function AnnouncementsTab() {
 
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
-      <section className="h-fit rounded-3xl border bg-card p-5">
-        <h2 className="flex items-center gap-2 text-sm font-medium">
-          <Megaphone className="size-4" aria-hidden />
-          Post an announcement
-        </h2>
-        <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
-          Shown as a banner on the dashboard and on the home page. Only the newest three are displayed.
-        </p>
+      <Section
+        title="Post an announcement"
+        hint="A banner on the dashboard and on the home page. Only the newest three are shown."
+      >
         <form
-          className="mt-4 space-y-3"
+          className="space-y-3"
           onSubmit={e => {
             e.preventDefault()
             create.mutate()
@@ -498,7 +747,13 @@ function AnnouncementsTab() {
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs" htmlFor="ann-body">Message</Label>
-            <Textarea id="ann-body" value={body} onChange={e => setBody(e.target.value)} rows={3} placeholder="Groq is rate-limited until 18:00 UTC; the router will prefer other providers." />
+            <Textarea
+              id="ann-body"
+              value={body}
+              onChange={e => setBody(e.target.value)}
+              rows={3}
+              placeholder="Groq is rate-limited until 18:00 UTC; the router will prefer other providers."
+            />
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs" htmlFor="ann-level">Tone</Label>
@@ -514,20 +769,19 @@ function AnnouncementsTab() {
             </Select>
           </div>
           <Button type="submit" className="w-full" disabled={create.isPending || !title.trim() || !body.trim()}>
-            {create.isPending ? <Loader2 className="me-1.5 size-3.5 animate-spin" aria-hidden /> : null}
+            {create.isPending && <Loader2 className="me-1.5 size-3.5 animate-spin" aria-hidden />}
             Publish
           </Button>
         </form>
-      </section>
+      </Section>
 
-      <section className="rounded-3xl border bg-card p-5">
-        <h2 className="text-sm font-medium">Published</h2>
-        <ul className="mt-3 divide-y">
+      <Section title="Published" action={<Badge variant="outline">{list.data?.announcements.length ?? 0}</Badge>}>
+        <ul className="divide-y">
           {(list.data?.announcements ?? []).map(item => (
             <li key={item.id} className="py-3">
               <div className="flex flex-wrap items-center gap-2">
                 <div className="min-w-0 flex-1">
-                  <p className="flex items-center gap-2 text-[13px] font-medium">
+                  <p className="flex flex-wrap items-center gap-2 text-[13px] font-medium">
                     {item.title}
                     <Badge variant="outline" className="h-5">{item.level}</Badge>
                     {!item.active && <span className="text-[11px] text-muted-foreground">hidden</span>}
@@ -557,11 +811,115 @@ function AnnouncementsTab() {
           ))}
         </ul>
         {(list.data?.announcements.length ?? 0) === 0 && (
-          <p className="mt-4 rounded-2xl border border-dashed p-6 text-center text-xs text-muted-foreground">
+          <p className="rounded-2xl border border-dashed p-6 text-center text-xs text-muted-foreground">
             Nothing published yet.
           </p>
         )}
-      </section>
+      </Section>
+    </div>
+  )
+}
+
+// ── Access & settings ─────────────────────────────────────────────────────
+
+function SettingsTab() {
+  const queryClient = useQueryClient()
+  const settings = useQuery<{ signupOpen: boolean; defaultApiAccess: boolean; defaultDailyLimit: number | null }>({
+    queryKey: ['admin-access-settings'],
+    queryFn: () => apiFetch('/api/admin/settings/access'),
+  })
+  const path = useQuery<{ path: string }>({
+    queryKey: ['admin-path'],
+    queryFn: () => apiFetch<{ path: string }>('/api/admin/path'),
+  })
+
+  const patch = useMutation({
+    mutationFn: (body: Record<string, unknown>) =>
+      apiFetch('/api/admin/settings/access', { method: 'PATCH', body: JSON.stringify(body) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-access-settings'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-overview'] })
+      queryClient.invalidateQueries({ queryKey: ['auth-status'] })
+    },
+  })
+
+  const data = settings.data
+  const defaultLimit = data?.defaultDailyLimit
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      <Section title="Sign-ups" hint="Whether a new person can create an account on this deployment.">
+        <div className="flex items-center justify-between gap-4">
+          <p className="text-[12px] leading-relaxed text-muted-foreground">
+            Open: anyone with this URL can create their own account and key. Closed: only existing accounts can sign in.
+          </p>
+          <Toggle
+            checked={data?.signupOpen ?? false}
+            onChange={signupOpen => patch.mutate({ signupOpen })}
+            label="Allow sign-ups"
+          />
+        </div>
+      </Section>
+
+      <Section title="New accounts" hint="What a brand-new account starts with. Existing accounts keep their own settings.">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-[12px] text-muted-foreground">API access to the shared provider pool</p>
+            <Toggle
+              checked={data?.defaultApiAccess ?? false}
+              onChange={defaultApiAccess => patch.mutate({ defaultApiAccess })}
+              label="API access for new accounts"
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-[12px] text-muted-foreground">Daily request cap (blank = unlimited)</p>
+            <DailyLimitInput
+              value={defaultLimit ?? null}
+              onSave={defaultDailyLimit => patch.mutate({ defaultDailyLimit })}
+            />
+          </div>
+        </div>
+      </Section>
+
+      <Section title="Admin console URL" hint="Where this panel lives. Not linked anywhere — bookmark it.">
+        <div className="flex items-center gap-2">
+          <code className="min-w-0 flex-1 truncate rounded-lg border bg-muted/40 px-2.5 py-1.5 font-mono text-[12px]">
+            {path.data?.path ?? '…'}
+          </code>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={async () => {
+              const value = path.data?.path
+              if (!value) return
+              const url = `${window.location.origin}${value}`
+              if (await copyText(url)) toast.success('Admin URL copied')
+              else toast.error('Could not copy — select it manually')
+            }}
+          >
+            <Copy className="me-1 size-3.5" aria-hidden /> Copy
+          </Button>
+        </div>
+        <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+          Change it with <code className="font-mono">FLUZY_ADMIN_PATH</code>. Only an admin session can open it;
+          everyone else gets the ordinary not-found page.
+        </p>
+      </Section>
+
+      <Section title="How access works" hint="The short version, for whoever runs this next.">
+        <ul className="space-y-2 text-[12px] leading-relaxed text-muted-foreground">
+          <li className="flex gap-2"><KeyRound className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+            Provider keys are one shared pool. Adding one here makes its models available to every account instantly.</li>
+          <li className="flex gap-2"><Gauge className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+            Each account has its own <code className="font-mono">/v1</code> key, its own daily cap, and an API on/off switch.</li>
+          <li className="flex gap-2"><Activity className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+            Suspending an account blocks both the API and the dashboard, and keeps its data.</li>
+          <li className="flex gap-2"><Users className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+            Only admins see this console. The last admin can never be demoted or suspended.</li>
+          <li className="flex gap-2"><Megaphone className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+            Announcements are public: they show on the home page before anyone signs in.</li>
+        </ul>
+      </Section>
     </div>
   )
 }

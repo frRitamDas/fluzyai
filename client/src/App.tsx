@@ -30,7 +30,7 @@ import { NewBuildPrompt } from '@/components/new-build-prompt'
 import { usePremium } from '@/hooks/use-premium'
 import { I18nProvider, useI18n } from '@/i18n'
 import { logout } from '@/lib/api'
-import { useAdminStatus } from '@/lib/use-admin'
+import { useAdminPath, useAdminStatus } from '@/lib/use-admin'
 import { toast } from '@/lib/toast'
 import { ThemeProvider } from '@/theme'
 import KeysPage from '@/pages/KeysPage'
@@ -261,10 +261,12 @@ function Navbar() {
   const [credentialsMode, setCredentialsMode] = useState<'password' | 'email' | null>(null)
   const { data: premium, licensed, isLoading: premiumLoading, isError: premiumError } = usePremium()
   const showUpgrade = Boolean(premium) && !licensed && !premiumLoading && !premiumError
-  // Only an admin sees the Admin entry; everyone else just gets no extra slot.
-  // The page behind it is gated server-side regardless.
+  // Only an admin sees the Admin entry, and it points at the console's own
+  // unguessable path rather than /admin. Everyone else gets no slot at all, and
+  // the page behind it is gated server-side regardless.
   const { isAdmin } = useAdminStatus()
-  const items = isAdmin ? [...navItems, { to: '/admin', labelKey: 'nav.admin' }] : navItems
+  const adminPath = useAdminPath()
+  const items = isAdmin && adminPath ? [...navItems, { to: adminPath, labelKey: 'nav.admin' }] : navItems
 
   return (
     <>
@@ -474,6 +476,9 @@ function AppShell({ children }: { children: ReactNode }) {
 }
 
 function App() {
+  // The console's path comes from the server, so it is a route only for an admin
+  // and only once known: /admin itself never exists.
+  const adminPath = useAdminPath()
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
@@ -515,7 +520,12 @@ function App() {
                       <Route path="/analytics" element={<AnalyticsPage />} />
                       <Route path="/logs" element={<LogsPage />} />
                       <Route path="/premium" element={<PremiumPage />} />
-                      <Route path="/admin" element={<AdminPage />} />
+                      {/* The console is rendered on the path the server
+                          chose (FLUZY_ADMIN_PATH), not a guessable /admin.
+                          With no path — a non-admin, or before the answer
+                          loads — there is no route, so /admin and every other
+                          guess fall through to the not-found page. */}
+                      {adminPath && <Route path={adminPath} element={<AdminPage />} />}
                       <Route path="/test" element={<Navigate to="/playground" replace />} />
                       <Route path="/health" element={<Navigate to="/keys" replace />} />
                       <Route path="*" element={<NotFoundPage />} />

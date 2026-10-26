@@ -15,8 +15,10 @@ import {
   normalizeEmail,
   desktopSessionToken,
 } from '../services/auth.js';
+import { getDb } from '../db/index.js';
 import { setupCodeMatches, clearSetupCode } from '../lib/setup-code.js';
-import { isAdminSession, setFirstAdmin, syncRoleForEmail } from '../services/roles.js';
+import { applyAccessDefaults, isAdminSession, setFirstAdmin, syncRoleForEmail } from '../services/roles.js';
+import { signupOpen } from '../services/access.js';
 import { generateResetCode, resetCodeMatches, clearResetCode } from '../lib/reset-code.js';
 
 export const authRouter = Router();
@@ -225,15 +227,13 @@ authRouter.post('/desktop-session', (req: Request, res: Response) => {
 // dashboard is single-tenant, so every account it holds can read the provider
 // keys, the unified API key, and every setting. A self-hosted install or a
 // deployment meant for a team can turn it on; a public URL should not.
+// Sign-up is open by default: this is one deployment shared by the people who
+// were given its URL, each with their own account and their own inference key.
+// The shared *provider* pool is admin-managed, so a signup hands out no
+// credential beyond the right to call /v1 through it. The admin panel can close
+// sign-ups (access.signup_open); FLUZY_ALLOW_SIGNUP=0 closes it for good.
 function signupAllowed(): boolean {
-  const raw = (process.env.FLUZY_ALLOW_SIGNUP ?? '').trim().toLowerCase();
-  // Open by default: this is one deployment shared by the people who were given
-  // its URL, each with their own account and their own inference key. The shared
-  // *provider* pool is admin-managed, so a signup hands out no credential beyond
-  // the right to call /v1 through it. Set FLUZY_ALLOW_SIGNUP=0 to close a
-  // deployment that is meant to have exactly one account.
-  if (raw === '0' || raw === 'false' || raw === 'no' || raw === 'off') return false;
-  return true;
+  return signupOpen();
 }
 
 // Create the dashboard account from the sign-in page.
@@ -281,6 +281,10 @@ authRouter.post('/register', (req: Request, res: Response) => {
     // An owner address becomes an admin here, before it ever signs in, so the
     // panel is simply there on the first load.
     const role = syncRoleForEmail(user.email);
+    // New accounts inherit the deployment's access defaults (API access on/off,
+    // daily cap). Done after promotion so an owner address is never created
+    // without the panel it is entitled to.
+    applyAccessDefaults(user.userId);
     const token = createSession(user.userId);
     res.status(201).json({ token, email: user.email, role, isAdmin: role === 'admin' });
   } catch (error) {
@@ -325,6 +329,7 @@ authRouter.post('/setup', (req: Request, res: Response) => {
   clearSetupCode(); // one-time: the dashboard is now claimed
   // The account that claims a fresh install administers it.
   const role = syncRoleForEmail(user.email) === 'admin' ? 'admin' : setFirstAdmin(user.userId);
+  applyAccessDefaults(user.userId);
   const token = createSession(user.userId);
   res.status(201).json({ token, email: user.email, role, isAdmin: role === 'admin' });
 });
@@ -355,6 +360,15 @@ authRouter.post('/login', (req: Request, res: Response) => {
   }
 
   clearFailures(email);
+  // A suspended account keeps its data but cannot sign in; the message says so
+  // rather than pretending the password was wrong.
+  const status = getDb().prepare('SELECT status FROM users WHERE id = ?').get(user.userId) as { status: string } | undefined;
+  if (status?.status === 'suspended') {
+    res.status(403).json({
+      error: { message: 'This account is suspended. Contact the deployment admin.', type: 'account_suspended' },
+    });
+    return;
+  }
   const role = syncRoleForEmail(user.email);
   const token = createSession(user.userId);
   res.json({ token, email: user.email, role, isAdmin: role === 'admin' });

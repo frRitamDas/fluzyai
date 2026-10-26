@@ -288,29 +288,38 @@ live-feed routers receive the update the same day we ship it.
 The catalog server never sees your prompts, completions, or provider keys — the
 router stays fully self-hosted either way.
 
-## Admin panel
+## Admin console
 
-One deployment, many accounts. Sign-up is open, and each account gets its own
-inference key on **Keys → API key** — rotating it affects nobody else. Provider
-keys are shared: they feed the single pool every account routes through, so they
-belong to the admin.
+One person runs the deployment; everyone else uses it. Sign-up is open, and each
+account gets its own inference key on **Keys → API key** — rotating it affects
+nobody else. Provider keys are different: they feed the single pool every account
+routes through, so they belong to the admin.
 
-The admin is decided by email, automatically — no grant step. The account whose
-address is in `FLUZY_ADMIN_EMAILS` (or the built-in owner list) is promoted at
-signup, at sign-in and on every boot, and the account that claims a fresh install
-is promoted too. That account gets an **Admin** entry in the navigation:
+**Getting in.** The account whose email is in `FLUZY_ADMIN_EMAILS` (or the
+built-in owner list) is promoted automatically at signup, at sign-in and on every
+boot, and the account that claims a fresh install is promoted too. No grant step.
 
-- **Providers & keys** — add a key for Groq, OpenRouter, Google AI Studio and the
-  rest. It goes into the shared pool immediately, so every user can call those
-  models on the next request; no publish or restart. Keys are probed as they are
-  added and can be disabled or removed.
-- **Accounts** — see who has signed up and promote or demote admins. The last
-  admin cannot be demoted, and you cannot demote yourself.
-- **Announcements** — a banner shown on the dashboard and on the home page,
-  dismissible per visitor.
+The console is served on an **unguessable path** (`FLUZY_ADMIN_PATH`, default
+`/ops-7f3a91c4`) — not `/admin`. Click **Admin** in the navigation to open it, or
+bookmark the path shown in *Access & settings → Admin console URL*. Anyone else,
+signed in or not, gets the ordinary not-found page.
 
-Ordinary accounts keep everything else: every model, every modality, the
-playground, analytics and their own key.
+- **Overview** — accounts, provider keys, healthy keys, live models, requests,
+  and the state of the database snapshot (last upload, pending write, last error,
+  and a warning if another instance saved a newer copy).
+- **Providers & keys** — add a Groq / OpenRouter / Gemini / … key and it lands in
+  the shared pool the router already reads, so every account can call those
+  models on the next request. Keys are probed as they are added, can be
+  re-checked or switched off without deleting the credential, and a key the
+  provider keeps rejecting is turned off automatically (the panel says so).
+- **Accounts** — every account with its own switches: **API access** on/off,
+  a **daily request cap**, **suspend** (blocks the API and the dashboard, keeps
+  the data), and promote/demote admins. The last admin can never be demoted or
+  suspended, and you cannot lock yourself out.
+- **Announcements** — a banner on the dashboard *and* the home page, dismissible
+  per visitor, newest three shown.
+- **Access & settings** — open or close sign-ups, choose what a new account
+  starts with (API access, daily cap), and see the console URL.
 
 ## Using the API
 

@@ -20,3 +20,24 @@ export function useAdminStatus(): { isAdmin: boolean; isLoading: boolean } {
   })
   return { isAdmin: data?.isAdmin === true, isLoading }
 }
+
+/**
+ * The unguessable path the admin console is served on.
+ *
+ * The route is not in the bundle: the app asks the server which path to render
+ * the panel at, so typing /admin (or guessing anything else) lands on the
+ * ordinary not-found page. This is not the security boundary — the session's
+ * role is — it only keeps strangers from finding the console to probe at all.
+ */
+export function useAdminPath(): string | null {
+  const { isAdmin } = useAdminStatus()
+  const { data } = useQuery<{ path: string }>({
+    queryKey: ['admin-path'],
+    queryFn: () => apiFetch<{ path: string }>('/api/admin/path'),
+    enabled: isAdmin,
+    retry: false,
+    staleTime: Infinity,
+    meta: { silenceToast: true },
+  })
+  return isAdmin ? data?.path ?? null : null
+}
