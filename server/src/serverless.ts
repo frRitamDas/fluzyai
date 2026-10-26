@@ -189,8 +189,17 @@ function dispatch(app: Handler, req: IncomingMessage, res: ServerResponse): Prom
  * it is returned. Small dashboard writes upload in well under a second; the cap
  * only exists so a slow bucket degrades to a late response instead of a hung
  * one (the invocation's own limit is 60 s).
+ *
+ * The cap must exceed the worst case of one flush, or the hold expires first and
+ * the invocation is frozen mid-upload — the failure the whole hold exists to
+ * prevent. A flush can cost a pre-upload ETag HEAD, a content download when that
+ * ETag moved, two upload attempts and the post-upload HEAD: four
+ * `FLUZY_REMOTE_DB_UPLOAD_TIMEOUT_MS` (3.5 s) budgets plus the second attempt,
+ * so 20 s covers it with room to spare. The common path stays ~1 s, and
+ * server/src/lib/remote-db.ts now also abandons a flush that outlives its own
+ * deadline rather than letting a frozen promise wedge the instance.
  */
-const SNAPSHOT_HOLD_MS = 8_000;
+const SNAPSHOT_HOLD_MS = 20_000;
 
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => {

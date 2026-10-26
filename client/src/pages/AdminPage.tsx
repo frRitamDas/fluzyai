@@ -56,6 +56,14 @@ interface Persistence {
   pendingWrite: boolean
   lastError: string | null
   staleSince: string | null
+  /** Upload bookkeeping, so "nothing to upload" reads differently from "stuck". */
+  flush?: {
+    attempts: number
+    uploads: number
+    abandoned: number
+    lastAttemptAt: string | null
+    lastOutcome: string | null
+  }
 }
 
 interface Overview {
@@ -282,6 +290,25 @@ function OverviewTab({ onOpenProviders }: { onOpenProviders: () => void }) {
                 <dt className="text-muted-foreground">Pending write</dt>
                 <dd>{p.pendingWrite ? 'yes — will retry' : 'no'}</dd>
               </div>
+              {p.flush && (
+                <div className="flex justify-between gap-3">
+                  <dt className="text-muted-foreground">Uploads</dt>
+                  <dd>
+                    {p.flush.uploads}/{p.flush.attempts}
+                    {p.flush.lastOutcome ? ` · ${p.flush.lastOutcome}` : ''}
+                  </dd>
+                </div>
+              )}
+              {p.flush && p.flush.abandoned > 0 && (
+                <div className="mt-2 flex items-start gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 p-2.5 text-[11px] text-amber-700 dark:text-amber-300">
+                  <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                  <span>
+                    {p.flush.abandoned} upload{p.flush.abandoned === 1 ? '' : 's'} never finished — this instance was
+                    frozen mid-upload and the next request retried. Writes made in that window are saved by the retry;
+                    if the count keeps climbing, lower the bucket latency or raise the hold budget.
+                  </span>
+                </div>
+              )}
               {p.lastError && (
                 <div className="flex justify-between gap-3 text-amber-600 dark:text-amber-400">
                   <dt>Last error</dt>
