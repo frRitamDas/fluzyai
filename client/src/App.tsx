@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { AuthGate, ChangeCredentialsModal } from '@/components/auth-gate'
+import { OnboardingDialog } from '@/components/onboarding-dialog'
 import { CommandPalette } from '@/components/command-palette'
 import { openCommandPalette } from '@/components/command-palette-state'
 import { ErrorBoundary } from '@/components/error-boundary'
@@ -511,6 +512,7 @@ function App() {
                   </PageBoundary>
                 </PageContainer>
                 <Toaster />
+                <OnboardingDialog />
                 <CommandPalette />
                 <UpdateReminder />
                 <NewBuildPrompt />

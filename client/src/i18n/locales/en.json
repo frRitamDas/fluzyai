@@ -60,7 +60,10 @@
     "emailChanged": "Email changed successfully.",
     "passwordReset": "Password reset successfully. Please sign in.",
     "resetCodeDockerHint": "Running in Docker? The code is in the container log: docker logs <container>.",
-    "desktopSessionFailed": "The dashboard could not sign in to the local server. Quit Fluzy AI and open it again."
+    "desktopSessionFailed": "The dashboard could not sign in to the local server. Quit Fluzy AI and open it again.",
+    "signupClosedTitle": "This dashboard is already claimed",
+    "signupClosedBody": "Each Fluzy AI deployment has one owner account. Sign in with the account you created — extra accounts can be enabled by the operator with FLUZY_ALLOW_SIGNUP=1.",
+    "backToHome": "Back to home"
   },
   "common": {
     "save": "Save",
@@ -1320,5 +1323,20 @@
     "tryConfidence": "{value}% confident",
     "tryServedBy": "{model} · {latency} ms",
     "exampleTitle": "Example request"
+  },
+  "onboarding": {
+    "title": "Welcome to Fluzy AI",
+    "subtitle": "Three steps from an empty dashboard to a working endpoint.",
+    "step1Title": "Add your first provider key",
+    "step1Body": "Paste a free-tier key from any supported provider. Fluzy AI checks it and learns the models it can serve.",
+    "step2Title": "Copy your unified key",
+    "step2Body": "One key authenticates every client you point here — no provider key leaves this server.",
+    "step3Title": "Call the endpoint",
+    "step3Body": "Use the base URL below anywhere an OpenAI base URL is accepted, with model \"auto\" to let the router choose.",
+    "copyBaseUrl": "Copy URL",
+    "copied": "API base URL copied",
+    "copyFailed": "Could not copy — select the URL and copy it manually",
+    "openKeys": "Open Keys",
+    "explore": "Explore the dashboard"
   }
 }

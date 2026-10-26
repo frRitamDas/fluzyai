@@ -72,6 +72,65 @@ describe('Dashboard auth (#35)', () => {
     expect(status).toBe(409);
   });
 
+  // The sign-in page offers "Create account" alongside "Sign in". On a claimed
+  // install that must not hand out a second admin account unless the operator
+  // asked for it: one dashboard, one owner, unless FLUZY_ALLOW_SIGNUP=1.
+  it('refuses signup on a claimed install that did not opt in', async () => {
+    const { status, body } = await call(app, 'POST', '/api/auth/register', {
+      email: 'stranger@example.com',
+      password: 'supersecret',
+    });
+    expect(status).toBe(403);
+    expect(body.error.type).toBe('signup_disabled');
+    expect(body.needsSetup).toBeUndefined();
+    // Status tells the UI the same thing, so it can explain instead of offering
+    // a form whose submit is guaranteed to fail.
+    expect((await call(app, 'GET', '/api/auth/status')).body.signupEnabled).toBe(false);
+  });
+
+  it('allows additional accounts when FLUZY_ALLOW_SIGNUP=1', async () => {
+    process.env.FLUZY_ALLOW_SIGNUP = '1';
+    try {
+      const { status, body } = await call(app, 'POST', '/api/auth/register', {
+        email: 'teammate@example.com',
+        password: 'anothersecret',
+      });
+      expect(status).toBe(201);
+      expect(typeof body.token).toBe('string');
+      expect(body.email).toBe('teammate@example.com');
+      expect((await call(app, 'GET', '/api/keys', undefined, body.token)).status).toBe(200);
+      expect((await call(app, 'GET', '/api/auth/status')).body.signupEnabled).toBe(true);
+
+      // Duplicate addresses are a 409, not a second account for the same email.
+      const again = await call(app, 'POST', '/api/auth/register', {
+        email: 'teammate@example.com',
+        password: 'anothersecret',
+      });
+      expect(again.status).toBe(409);
+      expect(again.body.error.type).toBe('email_taken');
+
+      // The new account signs in like any other.
+      expect((await call(app, 'POST', '/api/auth/login', {
+        email: 'teammate@example.com',
+        password: 'anothersecret',
+      })).status).toBe(200);
+    } finally {
+      delete process.env.FLUZY_ALLOW_SIGNUP;
+    }
+  });
+
+  it('rejects a signup that fails the schema', async () => {
+    process.env.FLUZY_ALLOW_SIGNUP = '1';
+    try {
+      const bad = await call(app, 'POST', '/api/auth/register', { email: 'not-an-email', password: 'supersecret' });
+      expect(bad.status).toBe(400);
+      const short = await call(app, 'POST', '/api/auth/register', { email: 'x@example.com', password: 'short' });
+      expect(short.status).toBe(400);
+    } finally {
+      delete process.env.FLUZY_ALLOW_SIGNUP;
+    }
+  });
+
   it('logs in with correct credentials and rejects wrong ones', async () => {
     const ok = await call(app, 'POST', '/api/auth/login', { email: 'admin@example.com', password: 'supersecret' });
     expect(ok.status).toBe(200);

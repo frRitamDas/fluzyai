@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Loader2 } from 'lucide-react'
+import { ArrowRight, Loader2 } from 'lucide-react'
+import { LandingPage } from '@/pages/LandingPage'
 import { apiFetch, setToken, UNAUTHORIZED_EVENT, type ApiError } from '@/lib/api'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { FieldError } from '@/components/ui/field-error'
 import { Input } from '@/components/ui/input'
 import { PasswordInput } from '@/components/ui/password-input'
@@ -45,6 +47,10 @@ interface AuthStatus {
   // A remote browser would be stopped by the one-time setup code, so the form
   // asks for it alongside the credentials instead of after a rejected submit.
   setupCodeRequired?: boolean
+  // Whether a new account can be created at all: true on an unclaimed install
+  // (that is the first account) and on a claimed one only when the operator set
+  // FLUZY_ALLOW_SIGNUP=1.
+  signupEnabled?: boolean
   authenticated: boolean
   email: string | null
   desktop?: boolean
@@ -61,13 +67,16 @@ function Centered({ children }: { children: ReactNode }) {
 }
 
 interface AuthFormProps {
-  mode: 'setup' | 'login'
+  /** 'signup' creates an account; 'login' signs into an existing one. */
+  mode: 'signup' | 'login'
   onAuthed: () => void
   /** /api/auth/status already knows the caller is remote and unclaimed. */
   codeRequiredUpFront?: boolean
+  /** Show the Sign in / Create account switch above the card. */
+  showTabs?: boolean
 }
 
-function AuthForm({ mode, onAuthed, codeRequiredUpFront = false }: AuthFormProps) {
+function AuthForm({ mode, onAuthed, codeRequiredUpFront = false, showTabs = false }: AuthFormProps) {
   const { t } = useI18n()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -82,7 +91,7 @@ function AuthForm({ mode, onAuthed, codeRequiredUpFront = false }: AuthFormProps
   const [attempted, setAttempted] = useState(false)
   const [showForgot, setShowForgot] = useState(false)
 
-  const isSetup = mode === 'setup'
+  const isSignup = mode === 'signup'
 
   // Inline field feedback; the server stays authoritative. Only the setup form
   // enforces the password minimum client-side (an existing password of any
@@ -92,12 +101,12 @@ function AuthForm({ mode, onAuthed, codeRequiredUpFront = false }: AuthFormProps
   // browser tab must be able to submit it after a password reset (#1250).
   const emailError = !email.trim()
     ? t('validation.required')
-    : isSetup && !isEmail(email)
+    : isSignup && !isEmail(email)
       ? t('validation.email')
       : null
   const passwordError = !password
     ? t('validation.required')
-    : isSetup && password.length < PASSWORD_MIN
+    : isSignup && password.length < PASSWORD_MIN
       ? t('validation.passwordMin', { min: PASSWORD_MIN })
       : null
 
@@ -121,8 +130,8 @@ function AuthForm({ mode, onAuthed, codeRequiredUpFront = false }: AuthFormProps
       const payload: Record<string, string> = { email, password }
       // Only the setup flow carries a code, and only once the server has asked
       // for it. The server ignores it for local (loopback) setup.
-      if (isSetup && setupCode) payload.setupCode = setupCode.trim()
-      const res = await apiFetch<{ token: string }>(isSetup ? '/api/auth/setup' : '/api/auth/login', {
+      if (isSignup && setupCode) payload.setupCode = setupCode.trim()
+      const res = await apiFetch<{ token: string }>(isSignup ? '/api/auth/register' : '/api/auth/login', {
         method: 'POST',
         body: JSON.stringify(payload),
       })
@@ -131,7 +140,7 @@ function AuthForm({ mode, onAuthed, codeRequiredUpFront = false }: AuthFormProps
     } catch (err) {
       // The server gates remote first-run setup behind a one-time code; reveal
       // the field so the operator can paste the code from the server logs.
-      if (isSetup && (err as ApiError).code === 'setup_code_required') {
+      if (isSignup && (err as ApiError).code === 'setup_code_required') {
         setCodeRequired(true)
       }
       setError((err as Error).message)
@@ -140,7 +149,7 @@ function AuthForm({ mode, onAuthed, codeRequiredUpFront = false }: AuthFormProps
     }
   }
 
-  if (showForgot && !isSetup) {
+  if (showForgot && !isSignup) {
     return <ForgotPasswordForm onBack={() => setShowForgot(false)} onAuthed={onAuthed} />
   }
 
@@ -154,11 +163,29 @@ function AuthForm({ mode, onAuthed, codeRequiredUpFront = false }: AuthFormProps
         <span className="ms-4 text-[11px] text-muted-foreground">Developed by Ritam Das</span>
       </div>
       <div className="rounded-3xl border bg-card p-6">
-        <h1 className="text-lg font-semibold tracking-tight">{isSetup ? t('auth.createYourAccount') : t('auth.signIn')}</h1>
+        {showTabs && (
+          <div role="tablist" aria-label={t('auth.signIn')} className="mb-6 grid grid-cols-2 gap-1 rounded-2xl bg-muted p-1">
+            <Link
+              to="/login"
+              role="tab"
+              aria-selected={!isSignup}
+              className={`rounded-xl px-3 py-1.5 text-center text-xs font-medium transition-colors ${!isSignup ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              {t('auth.signIn')}
+            </Link>
+            <Link
+              to="/signup"
+              role="tab"
+              aria-selected={isSignup}
+              className={`rounded-xl px-3 py-1.5 text-center text-xs font-medium transition-colors ${isSignup ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              {t('auth.createAccount')}
+            </Link>
+          </div>
+        )}
+        <h1 className="text-lg font-semibold tracking-tight">{isSignup ? t('auth.createYourAccount') : t('auth.signIn')}</h1>
         <p className="text-sm text-muted-foreground mt-1.5 mb-6">
-          {isSetup
-            ? t('auth.setupDescription')
-            : t('auth.loginDescription')}
+          {isSignup ? t('auth.setupDescription') : t('auth.loginDescription')}
         </p>
         <form onSubmit={submit} className="space-y-4" noValidate>
           <div className="space-y-1.5">
@@ -180,16 +207,16 @@ function AuthForm({ mode, onAuthed, codeRequiredUpFront = false }: AuthFormProps
             <Label className="text-xs" htmlFor="auth-password">{t('auth.password')}</Label>
             <PasswordInput
               id="auth-password"
-              autoComplete={isSetup ? 'new-password' : 'current-password'}
+              autoComplete={isSignup ? 'new-password' : 'current-password'}
               value={password}
               onChange={e => setPassword(e.target.value)}
-              placeholder={isSetup ? t('auth.passwordPlaceholderSetup') : t('auth.passwordPlaceholderLogin')}
+              placeholder={isSignup ? t('auth.passwordPlaceholderSetup') : t('auth.passwordPlaceholderLogin')}
               aria-invalid={showPasswordError}
               aria-describedby={showPasswordError ? 'auth-password-error' : undefined}
             />
             {attempted && <FieldError id="auth-password-error" error={passwordError} />}
           </div>
-          {isSetup && codeRequired && (
+          {isSignup && codeRequired && (
             <div className="space-y-1.5">
               <Label className="text-xs" htmlFor="auth-setup-code">{t('auth.setupCode')}</Label>
               <Input
@@ -215,10 +242,10 @@ function AuthForm({ mode, onAuthed, codeRequiredUpFront = false }: AuthFormProps
           )}
           <Button type="submit" className="w-full h-10" disabled={busy}>
             {busy && <Loader2 className="animate-spin" aria-hidden />}
-            {busy ? (isSetup ? t('auth.creating') : t('auth.signingIn')) : isSetup ? t('auth.createAccount') : t('auth.signIn')}
+            {busy ? (isSignup ? t('auth.creating') : t('auth.signingIn')) : isSignup ? t('auth.createAccount') : t('auth.signIn')}
           </Button>
         </form>
-        {!isSetup && (
+        {!isSignup && (
           <button
             type="button"
             onClick={() => setShowForgot(true)}
@@ -484,9 +511,94 @@ export function ChangeCredentialsModal({ mode, onClose }: ChangeCredentialsModal
   )
 }
 
+/**
+ * Shown instead of the create-account form when this deployment already has its
+ * account and the operator has not enabled extra signups. Explaining the rule
+ * beats a form that submits and returns 403.
+ */
+function SignupClosedPanel() {
+  const { t } = useI18n()
+  return (
+    <Centered>
+      <div className="mb-6 flex flex-col gap-1">
+        <div className="flex items-center gap-2">
+          <span className="inline-block size-2 rounded-full bg-foreground" />
+          <span className="font-semibold tracking-tight text-sm">Fluzy AI</span>
+        </div>
+        <span className="ms-4 text-[11px] text-muted-foreground">Developed by Ritam Das</span>
+      </div>
+      <div className="rounded-3xl border bg-card p-6">
+        <h1 className="text-lg font-semibold tracking-tight">{t('auth.signupClosedTitle')}</h1>
+        <p className="mt-1.5 mb-6 text-sm text-muted-foreground">{t('auth.signupClosedBody')}</p>
+        <Link to="/login" className={buttonVariants({ className: 'w-full' })}>
+          {t('auth.signIn')}
+          <ArrowRight className="ms-1.5 size-3.5" aria-hidden />
+        </Link>
+        <Link
+          to="/"
+          className="mt-3 block w-full text-center text-xs text-muted-foreground transition-colors hover:text-foreground"
+        >
+          {t('auth.backToHome')}
+        </Link>
+      </div>
+    </Centered>
+  )
+}
+
+/**
+ * The signed-out half of the app: a public home page plus the two auth routes.
+ *
+ * These are real routes (not local state) so the sign-in page can be linked,
+ * bookmarked and reloaded, and so the browser's back button works between the
+ * landing page and the forms. Anything else redirects home: a deep link to a
+ * dashboard page nobody is signed in for should introduce the product, not
+ * bounce off a 401.
+ */
+function PublicRoutes({ status, onAuthed }: { status: AuthStatus; onAuthed: () => void }) {
+  const location = useLocation()
+  // A fresh deployment has no account to sign in with, so /login is the
+  // create-account form and the two auth routes mean the same thing.
+  if (status.needsSetup && location.pathname === '/login') {
+    return <Navigate to="/signup" replace />
+  }
+  return (
+    <Routes>
+      <Route path="/" element={<LandingPage needsSetup={status.needsSetup} />} />
+      <Route
+        path="/login"
+        element={
+          <AuthForm
+            mode="login"
+            onAuthed={onAuthed}
+            showTabs
+          />
+        }
+      />
+      <Route
+        path="/signup"
+        element={
+          status.needsSetup ? (
+            <AuthForm
+              mode="signup"
+              onAuthed={onAuthed}
+              codeRequiredUpFront={!!status.setupCodeRequired}
+            />
+          ) : status.signupEnabled === false ? (
+            <SignupClosedPanel />
+          ) : (
+            <AuthForm mode="signup" onAuthed={onAuthed} showTabs />
+          )
+        }
+      />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  )
+}
+
 export function AuthGate({ children }: { children: ReactNode }) {
   const { t } = useI18n()
   const queryClient = useQueryClient()
+  const location = useLocation()
   const { data, isLoading, isError, refetch } = useQuery<AuthStatus>({
     queryKey: ['auth-status'],
     queryFn: () => apiFetch('/api/auth/status'),
@@ -526,8 +638,13 @@ export function AuthGate({ children }: { children: ReactNode }) {
     })()
   }, [desktopNeedsSession, desktopSession, repairFailed, queryClient, refetch])
 
+  const navigate = useNavigate()
+
   function onAuthed() {
     // New session: drop any cached (unauthenticated) data and re-check status.
+    // The browser is still on /login or /signup, which the signed-in shell does
+    // not route, so move it to the dashboard first.
+    if (location.pathname !== '/') navigate('/', { replace: true })
     queryClient.invalidateQueries()
     refetch()
   }
@@ -564,10 +681,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     }
     return <Centered><p className="flex items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-3.5 animate-spin" aria-hidden />{t('auth.loading')}</p></Centered>
   }
-  if (data.needsSetup) {
-    return <AuthForm mode="setup" onAuthed={onAuthed} codeRequiredUpFront={!!data.setupCodeRequired} />
-  }
-  if (!data.authenticated) return <AuthForm mode="login" onAuthed={onAuthed} />
+  if (!data.authenticated) return <PublicRoutes status={data} onAuthed={onAuthed} />
 
   return <>{children}</>
 }
