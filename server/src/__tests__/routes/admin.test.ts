@@ -165,3 +165,153 @@ describe('Admin panel and roles', () => {
     expect((await call(app, 'GET', '/api/settings/api-key/deployment', undefined, userToken)).status).toBe(403);
   });
 });
+
+/**
+ * Access control: who may use the shared pool, and how much.
+ *
+ * The panel is the only place these switches live, so they are tested through
+ * it — the same request a click makes — rather than against the service.
+ */
+describe('Admin access control', () => {
+  let app: Express;
+  let ownerToken: string;
+  let memberToken: string;
+  let memberId: number;
+
+  beforeAll(async () => {
+    process.env.ENCRYPTION_KEY = '0'.repeat(64);
+    delete process.env.FLUZY_ADMIN_EMAILS;
+    delete process.env.FLUZY_ALLOW_SIGNUP;
+    initDb(':memory:');
+    app = createApp();
+
+    const owner = await call(app, 'POST', '/api/auth/register', {
+      email: 'ritam73592@gmail.com', password: 'owner-secret-1',
+    });
+    ownerToken = owner.body.token;
+    const member = await call(app, 'POST', '/api/auth/register', {
+      email: 'member@example.com', password: 'member-secret-1',
+    });
+    memberToken = member.body.token;
+    memberId = (await call(app, 'GET', '/api/admin/me', undefined, ownerToken)).body.id;
+    const users = await call(app, 'GET', '/api/admin/users', undefined, ownerToken);
+    memberId = users.body.users.find((u: any) => u.email === 'member@example.com').id;
+  });
+
+  it('serves the panel on an unguessable path, not /admin', async () => {
+    const { status, body } = await call(app, 'GET', '/api/admin/path', undefined, ownerToken);
+    expect(status).toBe(200);
+    expect(body.path).toMatch(/^\/[a-z0-9-]+$/);
+    expect(body.path).not.toBe('/admin');
+    // Ordinary accounts cannot learn it.
+    expect((await call(app, 'GET', '/api/admin/path', undefined, memberToken)).status).toBe(403);
+  });
+
+  it('turns one account\'s API access off without touching anyone else', async () => {
+    const key = (await call(app, 'GET', '/api/settings/api-key', undefined, memberToken)).body.apiKey;
+
+    const patched = await call(app, 'PATCH', `/api/admin/users/${memberId}`, { apiAccess: false }, ownerToken);
+    expect(patched.status).toBe(200);
+    expect(patched.body.user).toMatchObject({ apiAccess: false });
+
+    const blocked = await call(app, 'POST', '/v1/chat/completions', {
+      model: 'auto', messages: [{ role: 'user', content: 'hi' }],
+    }, key);
+    expect(blocked.status).toBe(403);
+    expect(blocked.body.error.type).toBe('api_access_disabled');
+
+    // Their dashboard session still works: this is an API switch, not a ban.
+    expect((await call(app, 'GET', '/api/settings/api-key', undefined, memberToken)).status).toBe(200);
+
+    await call(app, 'PATCH', `/api/admin/users/${memberId}`, { apiAccess: true }, ownerToken);
+  });
+
+  it('suspends an account: no sign-in, no dashboard, no API', async () => {
+    const key = (await call(app, 'GET', '/api/settings/api-key', undefined, memberToken)).body.apiKey;
+    await call(app, 'PATCH', `/api/admin/users/${memberId}`, { status: 'suspended' }, ownerToken);
+
+    const login = await call(app, 'POST', '/api/auth/login', {
+      email: 'member@example.com', password: 'member-secret-1',
+    });
+    expect(login.status).toBe(403);
+    expect(login.body.error.type).toBe('account_suspended');
+
+    // The session issued before the suspension stops working too.
+    expect((await call(app, 'GET', '/api/settings/api-key', undefined, memberToken)).status).toBe(403);
+    expect((await call(app, 'POST', '/v1/chat/completions', {
+      model: 'auto', messages: [{ role: 'user', content: 'hi' }],
+    }, key)).body.error.type).toBe('account_suspended');
+
+    await call(app, 'PATCH', `/api/admin/users/${memberId}`, { status: 'active' }, ownerToken);
+    expect((await call(app, 'GET', '/api/settings/api-key', undefined, memberToken)).status).toBe(200);
+  });
+
+  it('enforces a per-account daily request cap', async () => {
+    const key = (await call(app, 'GET', '/api/settings/api-key', undefined, memberToken)).body.apiKey;
+    await call(app, 'PATCH', `/api/admin/users/${memberId}`, { dailyLimit: 1 }, ownerToken);
+
+    // First call spends the day's single request; the model itself need not
+    // resolve for the counter to move — the gate runs before routing.
+    await call(app, 'POST', '/v1/chat/completions', {
+      model: 'auto', messages: [{ role: 'user', content: 'hi' }],
+    }, key);
+    const second = await call(app, 'POST', '/v1/chat/completions', {
+      model: 'auto', messages: [{ role: 'user', content: 'hi' }],
+    }, key);
+    expect(second.status).toBe(429);
+    expect(second.body.error.type).toBe('daily_limit_reached');
+
+    const users = await call(app, 'GET', '/api/admin/users', undefined, ownerToken);
+    expect(users.body.users.find((u: any) => u.id === memberId))
+      .toMatchObject({ dailyLimit: 1, requestsToday: 1 });
+
+    await call(app, 'PATCH', `/api/admin/users/${memberId}`, { dailyLimit: null }, ownerToken);
+  });
+
+  it('refuses to let an admin lock themselves out', async () => {
+    const me = (await call(app, 'GET', '/api/admin/me', undefined, ownerToken)).body;
+    expect((await call(app, 'PATCH', `/api/admin/users/${me.id}`, { status: 'suspended' }, ownerToken)).status).toBe(400);
+    expect((await call(app, 'PATCH', `/api/admin/users/${me.id}`, { role: 'user' }, ownerToken)).status).toBe(400);
+  });
+
+  it('opens and closes sign-up from the panel', async () => {
+    expect((await call(app, 'PATCH', '/api/admin/settings/access', { signupOpen: false }, ownerToken)).status).toBe(200);
+    expect((await call(app, 'GET', '/api/auth/status')).body.signupEnabled).toBe(false);
+
+    const blocked = await call(app, 'POST', '/api/auth/register', {
+      email: 'late@example.com', password: 'late-secret-1',
+    });
+    expect(blocked.status).toBe(403);
+
+    const reopened = await call(app, 'PATCH', '/api/admin/settings/access', { signupOpen: true }, ownerToken);
+    expect(reopened.body.signupOpen).toBe(true);
+    expect((await call(app, 'GET', '/api/auth/status')).body.signupEnabled).toBe(true);
+  });
+
+  it('applies new-account defaults from the panel', async () => {
+    await call(app, 'PATCH', '/api/admin/settings/access',
+      { defaultApiAccess: false, defaultDailyLimit: 5 }, ownerToken);
+
+    const created = await call(app, 'POST', '/api/auth/register', {
+      email: 'newcomer@example.com', password: 'newcomer-secret-1',
+    });
+    expect(created.status).toBe(201);
+    const users = await call(app, 'GET', '/api/admin/users', undefined, ownerToken);
+    expect(users.body.users.find((u: any) => u.email === 'newcomer@example.com'))
+      .toMatchObject({ apiAccess: false, dailyLimit: 5 });
+
+    await call(app, 'PATCH', '/api/admin/settings/access',
+      { defaultApiAccess: true, defaultDailyLimit: null }, ownerToken);
+  });
+
+  it('reports snapshot persistence so a lost write is visible', async () => {
+    const { body } = await call(app, 'GET', '/api/admin/overview', undefined, ownerToken);
+    // Unconfigured locally, but the shape is what the panel renders: configured,
+    // last upload, pending write, last error, stale-since.
+    expect(body.persistence).toHaveProperty('configured');
+    expect(body.persistence).toHaveProperty('pendingWrite');
+    expect(body.persistence).toHaveProperty('lastUploadAt');
+    expect(body.persistence).toHaveProperty('staleSince');
+    expect(body.access).toMatchObject({ signupOpen: true, defaultApiAccess: true });
+  });
+});

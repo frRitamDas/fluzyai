@@ -36,6 +36,23 @@ import type { Db } from '../db/types.js';
  */
 
 const REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * Upload timeout, deliberately shorter than the response hold in
+ * server/src/serverless.ts (8 s).
+ *
+ * A 430 KB object to Supabase Storage normally lands in well under a second.
+ * Letting one attempt run for 30 s meant the hold expired first, the response
+ * went out, the invocation was frozen, and the in-flight upload died with
+ * "The operation was aborted due to timeout" — the database silently kept the
+ * change locally and the next cold start never saw it. Failing fast keeps the
+ * upload inside the window where the instance is guaranteed to still be
+ * running, and the dirty flag survives for the next request to retry.
+ */
+function uploadTimeoutMs(): number {
+  const raw = Number.parseInt(process.env.FLUZY_REMOTE_DB_UPLOAD_TIMEOUT_MS ?? '', 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : 3_500;
+}
 const UPLOAD_DEBOUNCE_MS = 1_500;
 
 export interface RemoteDbConfig {
@@ -125,8 +142,11 @@ async function restoreRemoteDbInner(config: RemoteDbConfig, dbPath: string): Pro
       console.warn(`[remote-db] restore failed: HTTP ${res.status} ${res.statusText}`);
       return 'failed';
     }
+    knownEtag = normalizeEtag(res.headers.get('etag'));
+    staleSince = null;
 
     const body = Buffer.from(await res.arrayBuffer());
+    knownContentHash = crypto.createHash('sha256').update(body).digest('hex');
     if (body.length === 0) {
       console.warn('[remote-db] snapshot is empty — starting empty');
       return 'absent';
@@ -170,6 +190,21 @@ let lastRestoreAt: string | null = null;
 let lastUploadAt: string | null = null;
 let lastError: string | null = null;
 
+// Identity of the remote object as this instance last saw it. A serverless
+// platform runs several instances of the same deployment, each with its own
+// copy of the file: without this, an instance that restored an old snapshot and
+// then uploaded would erase everything a sibling instance had written since —
+// which reached production as "the API key I added disappears". Before each
+// upload we compare the remote ETag against the one we last observed; if it
+// moved, somebody else wrote and this instance must NOT overwrite them.
+let knownEtag: string | null = null;
+let staleSince: string | null = null;
+// SHA-256 of the bytes this instance last restored or uploaded. When the ETag
+// looks foreign, the content settles it: an ETag that merely changed shape (a
+// different quoting, a storage-side re-encode) must not be mistaken for another
+// writer, or the guard would stop a healthy deployment from persisting at all.
+let knownContentHash: string | null = null;
+
 export interface RemoteDbStatus {
   configured: boolean;
   bucket: string | null;
@@ -179,6 +214,8 @@ export interface RemoteDbStatus {
   lastUploadAt: string | null;
   pendingWrite: boolean;
   lastError: string | null;
+  /** Set when another instance wrote a newer snapshot than this one holds. */
+  staleSince: string | null;
 }
 
 export function remoteDbStatus(): RemoteDbStatus {
@@ -192,7 +229,53 @@ export function remoteDbStatus(): RemoteDbStatus {
     lastUploadAt,
     pendingWrite: dirty,
     lastError,
+    staleSince,
   };
+}
+
+/** The remote object's ETag, or null when the storage API does not send one. */
+/** Storage ETags arrive quoted on some responses and bare on others. */
+function normalizeEtag(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const trimmed = value.trim().replace(/^W\//, '').replace(/^"|"$/g, '');
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+async function remoteEtagFor(config: RemoteDbConfig): Promise<string | null> {
+  try {
+    const res = await fetch(objectUrl(config), {
+      method: 'HEAD',
+      headers: authHeaders(config),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (!res.ok) return null;
+    return normalizeEtag(res.headers.get('etag'));
+  } catch {
+    // A HEAD that fails must not block the upload: the ETag guard is a
+    // safety net, and losing it is better than never persisting at all.
+    return null;
+  }
+}
+
+/** Kill switch for the stale-instance guard (FLUZY_REMOTE_DB_STALE_GUARD=0). */
+function staleGuardEnabled(): boolean {
+  const raw = (process.env.FLUZY_REMOTE_DB_STALE_GUARD ?? '').trim().toLowerCase();
+  return !(raw === '0' || raw === 'false' || raw === 'no' || raw === 'off');
+}
+
+/** SHA-256 of the bytes currently stored remotely, or null if unavailable. */
+async function remoteContentHash(config: RemoteDbConfig): Promise<string | null> {
+  try {
+    const res = await fetch(objectUrl(config), {
+      headers: authHeaders(config),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (!res.ok) return null;
+    const body = Buffer.from(await res.arrayBuffer());
+    return crypto.createHash('sha256').update(body).digest('hex');
+  } catch {
+    return null;
+  }
 }
 
 function checkpoint(db: Db): void {
@@ -221,6 +304,30 @@ export async function flushRemoteDb(): Promise<boolean> {
     try {
       if (localDb) checkpoint(localDb);
       const body = fs.readFileSync(pathAtStart);
+
+      // Refuse to overwrite a snapshot another instance wrote after us. One
+      // cheap HEAD, and only when we know the ETag from a restore/upload — with
+      // no baseline there is nothing to compare against.
+      if (knownEtag && staleGuardEnabled()) {
+        const remoteEtag = await remoteEtagFor(config);
+        if (remoteEtag && remoteEtag !== knownEtag) {
+          // Suspicious, not decisive: confirm against the bytes. Equal content
+          // means the ETag moved for a reason that is not a competing writer.
+          const remoteHash = await remoteContentHash(config);
+          if (remoteHash && knownContentHash && remoteHash === knownContentHash) {
+            knownEtag = remoteEtag;
+          } else {
+            staleSince = new Date().toISOString();
+            lastError = 'another instance wrote a newer snapshot';
+            dirty = false; // uploading would destroy their write; stop trying
+            console.warn(
+              '[remote-db] skipping upload: another instance wrote a newer snapshot. ' +
+                'This instance is serving a stale copy and needs a cold start to resync.',
+            );
+            return false;
+          }
+        }
+      }
       // Content, not mtime: the WAL checkpoint above rewrites the file's
       // timestamps even when it folds nothing in, so an mtime comparison made
       // every flush look dirty and uploaded the same bytes twice per request.
@@ -228,23 +335,37 @@ export async function flushRemoteDb(): Promise<boolean> {
       if (lastUploaded && lastUploaded.size === body.length && lastUploaded.hash === hash) {
         return false;
       }
-      const res = await fetch(objectUrl(config), {
-        method: 'POST',
-        headers: authHeaders(config, {
-          'content-type': 'application/octet-stream',
-          'cache-control': 'no-store',
-          'x-upsert': 'true',
-        }),
-        body,
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      });
-      if (!res.ok) {
-        const detail = await res.text().catch(() => '');
-        throw new Error(`HTTP ${res.status} ${res.statusText}${detail ? ` — ${detail.slice(0, 200)}` : ''}`);
+      // One immediate retry: a cold TLS handshake to the storage host is the
+      // single most common way the first attempt loses its 5 s budget, and a
+      // second attempt reuses the connection.
+      let res: globalThis.Response | null = null;
+      let lastFailure = '';
+      for (let attempt = 0; attempt < 2; attempt++) {
+        res = await fetch(objectUrl(config), {
+          method: 'POST',
+          headers: authHeaders(config, {
+            'content-type': 'application/octet-stream',
+            'cache-control': 'no-store',
+            'x-upsert': 'true',
+          }),
+          body,
+          signal: AbortSignal.timeout(uploadTimeoutMs()),
+        });
+        if (res.ok) break;
+        lastFailure = `HTTP ${res.status} ${res.statusText}${(await res.text().catch(() => '')).slice(0, 200)}`;
+      }
+      if (!res || !res.ok) {
+        throw new Error(lastFailure || 'upload failed');
       }
       lastUploaded = { size: body.length, hash };
+      knownContentHash = hash;
       lastUploadAt = new Date().toISOString();
       lastError = null;
+      staleSince = null;
+      // Re-read the ETag rather than trusting the upload response: the value
+      // must come from the same endpoint (and same quoting) the next comparison
+      // uses, or every upload after the first would look like a foreign write.
+      knownEtag = (await remoteEtagFor(config)) ?? knownEtag;
       console.log(`[remote-db] uploaded ${(body.length / 1024).toFixed(1)} KB to ${config.bucket}/${config.object}`);
       return true;
     } catch (error) {

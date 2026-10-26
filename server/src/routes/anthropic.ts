@@ -11,6 +11,7 @@ import type {
 } from '@fluzyai/shared/types.js';
 import { routeRequest, resolveModelGroupCandidates, resolveRoutingChain, resolveStickyPreference, routingReserveTokens, failureAttributionFor, type RouteResult, type ResolvedChain, type ChainRow } from '../services/router.js';
 import { getSetting } from '../db/index.js';
+import { inferenceDenial, recordInference } from '../services/access.js';
 import { resolveAuth, prependSystemPrompt, type ResolvedAuth } from '../lib/system-prompt.js';
 import { contentToString, estimateInputTokens } from '../lib/content.js';
 import { routeOutputBudget } from '../lib/output-cap.js';
@@ -215,6 +216,14 @@ function authenticate(req: Request, res: Response): ResolvedAuth | null {
   if (!auth) {
     sendError(res, 401, 'authentication_error', 'Invalid API key');
     return null;
+  }
+  if (auth.kind === 'user') {
+    const denial = inferenceDenial(auth.userId);
+    if (denial) {
+      sendError(res, denial.status, denial.type, denial.message);
+      return null;
+    }
+    recordInference(auth.userId);
   }
   return auth;
 }

@@ -13,6 +13,7 @@ import { retryAfterSeconds } from '../lib/retry-hint.js';
 import { runImageGeneration, runVideoGeneration, runSpeech, runTranscription, MediaError, MAX_TRANSCRIPTION_BYTES } from '../services/media.js';
 import multer from 'multer';
 import { getDb } from '../db/index.js';
+import { inferenceDenial, recordInference } from '../services/access.js';
 import { resolveAuth, prependSystemPrompt, type ResolvedAuth } from '../lib/system-prompt.js';
 import { contentToString, estimateInputTokens, messageHasImage, normalizeOutboundContent, sanitizeResponse } from '../lib/content.js';
 import { routeOutputBudget } from '../lib/output-cap.js';
@@ -72,6 +73,20 @@ function requireInferenceAuth(req: Request, res: Response): ResolvedAuth | null 
   if (!auth) {
     res.status(401).json({ error: { message: 'Invalid API key', type: 'authentication_error' } });
     return null;
+  }
+  // A per-account key can be switched off, capped or suspended by the admin
+  // without rotating anything. Checked here (not inside resolveAuth) so the
+  // caller still gets a specific, actionable error instead of "invalid key".
+  if (auth.kind === 'user') {
+    const denial = inferenceDenial(auth.userId);
+    if (denial) {
+      res.status(denial.status).json({ error: { message: denial.message, type: denial.type } });
+      return null;
+    }
+    // Counted before the request runs: a client that streams for a minute is one
+    // request either way, and counting on completion would let a crash-looping
+    // client exceed its cap silently.
+    recordInference(auth.userId);
   }
   return auth;
 }

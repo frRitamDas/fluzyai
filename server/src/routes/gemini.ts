@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { buildModelListing, type NormalizedModel } from '../services/model-listing.js';
 import { extractApiToken } from './proxy.js';
+import { inferenceDenial, recordInference } from '../services/access.js';
 import { resolveAuth, prependSystemPrompt, type ResolvedAuth } from '../lib/system-prompt.js';
 import { runInboundChat, type InboundChatWire } from '../lib/inbound-chat.js';
 import {
@@ -59,6 +60,14 @@ function authenticate(req: Request, res: Response): ResolvedAuth | null {
   if (!auth) {
     sendError(res, 401, 'Invalid API key', 'UNAUTHENTICATED');
     return null;
+  }
+  if (auth.kind === 'user') {
+    const denial = inferenceDenial(auth.userId);
+    if (denial) {
+      sendError(res, denial.status, denial.message, denial.type.toUpperCase());
+      return null;
+    }
+    recordInference(auth.userId);
   }
   return auth;
 }

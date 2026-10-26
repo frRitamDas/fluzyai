@@ -12,6 +12,7 @@ import type {
 import { routeRequest, hasEnabledVisionModel, hasEnabledToolsModel, resolveStickyPreference, routingReserveTokens, resolveModelGroupCandidates, resolveRoutingChain, failureAttributionFor, type RouteResult, type ResolvedChain, type ChainRow } from '../services/router.js';
 import { getDb } from '../db/index.js';
 import { resolveAuth, prependSystemPrompt } from '../lib/system-prompt.js';
+import { inferenceDenial, recordInference } from '../services/access.js';
 import { isUnifyEnabled, getModelGroups, resolveRequestedIdForDispatch } from '../services/model-groups.js';
 import { contentToString, estimateInputTokens, messageHasImage } from '../lib/content.js';
 import { routeOutputBudget } from '../lib/output-cap.js';
@@ -684,6 +685,14 @@ export async function handleResponses(req: Request, res: Response): Promise<void
   if (!auth) {
     res.status(401).json({ error: { message: 'Invalid API key', type: 'authentication_error' } });
     return;
+  }
+  if (auth.kind === 'user') {
+    const denial = inferenceDenial(auth.userId);
+    if (denial) {
+      res.status(denial.status).json({ error: { message: denial.message, type: denial.type } });
+      return;
+    }
+    recordInference(auth.userId);
   }
 
   const parsed = responsesRequestSchema.safeParse(req.body);

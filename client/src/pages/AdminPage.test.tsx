@@ -18,11 +18,30 @@ const overview = {
   models: { total: 210, enabled: 180 },
   requests: { total: 1200, today: 42 },
   announcements: { active: 0 },
+  persistence: {
+    configured: true,
+    bucket: 'fluzyai-db',
+    object: 'fluzyai.db',
+    lastRestoreAt: '2026-10-26T19:57:13.206Z',
+    lastUploadAt: '2026-10-26T19:57:15.968Z',
+    pendingWrite: false,
+    lastError: null,
+    staleSince: null,
+  },
+  access: { signupOpen: true, defaultApiAccess: true, defaultDailyLimit: null, suspended: 0, withoutApiAccess: 0 },
 }
 
 const users = [
-  { id: 1, email: 'ritam73592@gmail.com', role: 'admin', createdAt: '2026-10-01 09:00:00', hasApiKey: true },
-  { id: 2, email: 'someone@example.com', role: 'user', createdAt: '2026-10-02 09:00:00', hasApiKey: false },
+  {
+    id: 1, email: 'ritam73592@gmail.com', role: 'admin', status: 'active',
+    apiAccess: true, dailyLimit: null, requestsToday: 3,
+    createdAt: '2026-10-01 09:00:00', hasApiKey: true,
+  },
+  {
+    id: 2, email: 'someone@example.com', role: 'user', status: 'active',
+    apiAccess: true, dailyLimit: null, requestsToday: 0,
+    createdAt: '2026-10-02 09:00:00', hasApiKey: false,
+  },
 ]
 
 vi.mock('@/lib/api', () => ({
@@ -33,6 +52,8 @@ vi.mock('@/lib/api', () => ({
     if (path === '/api/admin/users') return { users }
     if (path === '/api/admin/providers') return { providers: [] }
     if (path === '/api/admin/keys') return { keys: [] }
+    if (path === '/api/admin/path') return { path: '/ops-7f3a91c4' }
+    if (path === '/api/admin/settings/access') return { signupOpen: true, defaultApiAccess: true, defaultDailyLimit: null }
     if (path === '/api/admin/announcements') {
       return method === 'POST'
         ? { announcement: { id: 1, title: 'Maintenance', body: 'Tonight', level: 'info', active: true, createdAt: '' } }
@@ -69,7 +90,7 @@ const text = () => container.textContent ?? ''
 
 it('shows the deployment stats an operator cares about', async () => {
   await mount()
-  expect(text()).toContain('Admin panel')
+  expect(text()).toContain('Admin console')
   // Accounts, provider keys, healthy keys, providers, models, requests today.
   expect(text()).toContain('3')
   expect(text()).toContain('210')
@@ -86,14 +107,14 @@ it('lists accounts and promotes one', async () => {
 
   expect(text()).toContain('someone@example.com')
 
-  const promote = [...container.querySelectorAll('button')].find(b => b.textContent === 'Make admin')
+  const promote = [...container.querySelectorAll('button')].find(b => b.textContent?.includes('Make admin'))
   expect(promote).toBeTruthy()
   act(() => promote!.click())
   await act(async () => { await new Promise(r => setTimeout(r, 0)) })
 
   const patch = requests.find(r => r.method === 'PATCH')
   expect(patch?.path).toBe('/api/admin/users/2')
-  expect(patch?.body).toEqual({ role: 'admin' })
+  expect(patch?.body).toMatchObject({ role: 'admin' })
 })
 
 it('publishes an announcement', async () => {

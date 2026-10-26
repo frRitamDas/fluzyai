@@ -25,7 +25,9 @@ describe('roles and announcements migration', () => {
     down(getDb());
     expect(cols('users')).not.toContain('role');
     expect(cols('users')).not.toContain('api_key');
-    expect(cols('users')).toEqual(['id', 'email', 'password_hash', 'created_at']);
+    // (Later migrations add columns of their own; the assertion is that THIS
+    // one took its two back out.)
+    expect(cols('users')).toEqual(expect.arrayContaining(['id', 'email', 'password_hash', 'created_at']));
 
     up(getDb());
     up(getDb());

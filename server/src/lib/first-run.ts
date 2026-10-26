@@ -1,5 +1,5 @@
 import { userCount, createUser } from '../services/auth.js';
-import { setFirstAdmin } from '../services/roles.js';
+import { applyAccessDefaults, setFirstAdmin } from '../services/roles.js';
 import { clearSetupCode, generateSetupCode } from './setup-code.js';
 
 /**
@@ -107,6 +107,7 @@ export function seedAdminFromEnv(): AdminSeedResult {
   // and whoever's address was configured here is the person hosting it, so the
   // account administers the deployment regardless of the admin-email list.
   setFirstAdmin(created.userId);
+  applyAccessDefaults(created.userId);
   clearSetupCode();
   console.log(`[admin] dashboard account created for ${email} (from FLUZY_ADMIN_EMAIL)`);
   return 'created';
