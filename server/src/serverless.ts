@@ -179,6 +179,64 @@ function dispatch(app: Handler, req: IncomingMessage, res: ServerResponse): Prom
   });
 }
 
+/**
+ * How long a response may be held open so the snapshot can be uploaded before
+ * it is returned. Small dashboard writes upload in well under a second; the cap
+ * only exists so a slow bucket degrades to a late response instead of a hung
+ * one (the invocation's own limit is 60 s).
+ */
+const SNAPSHOT_HOLD_MS = 8_000;
+
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => {
+    const timer = setTimeout(resolve, ms);
+    timer.unref?.();
+  });
+}
+
+/**
+ * Hold the response open until pending writes are snapshotted.
+ *
+ * Awaiting the upload AFTER the response is written does not work on a
+ * serverless platform: once the response is complete the invocation may be
+ * frozen, and an in-flight fetch is suspended until it is thawed — observed as
+ * a 30 s "operation was aborted due to timeout" with the bucket still empty.
+ * So the upload runs while the request is still open, ahead of `res.end`.
+ *
+ * Streaming responses (anything that already called res.write) cannot be held,
+ * because bytes are on the wire; those fall back to the after-response flush,
+ * which remains a best effort.
+ */
+function holdResponseForSnapshot(res: ServerResponse): { held: () => boolean } {
+  const originalEnd = res.end.bind(res);
+  let held = false;
+  let streamed = false;
+
+  const originalWrite = res.write.bind(res);
+  res.write = ((...args: Parameters<ServerResponse['write']>) => {
+    streamed = true;
+    return originalWrite(...args);
+  }) as ServerResponse['write'];
+
+  res.end = ((...args: Parameters<ServerResponse['end']>) => {
+    if (held || streamed || !isRemoteDbDirty()) {
+      return originalEnd(...args);
+    }
+    held = true;
+    void (async () => {
+      try {
+        await Promise.race([flushRemoteDb(), delay(SNAPSHOT_HOLD_MS)]);
+      } catch {
+        /* flushRemoteDb already logged it; the dirty flag is kept for a retry */
+      }
+      originalEnd(...args);
+    })();
+    return res;
+  }) as ServerResponse['end'];
+
+  return { held: () => held };
+}
+
 export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
   let app: Handler;
   try {
@@ -196,12 +254,16 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     req.url = restoreOriginalUrl(req.url);
   }
 
+  // Uploads a write made by this request before the response is returned, while
+  // the invocation is guaranteed to still be running.
+  const snapshot = holdResponseForSnapshot(res);
+
   await dispatch(app, req, res);
 
-  // Last thing before the instance may be frozen: persist writes made by this
-  // request. Failures are logged and retried on the next write, never surfaced
-  // to a caller whose request already succeeded.
-  if (isRemoteDbDirty()) {
+  // Best-effort second chance for a streaming response, or one whose hold hit
+  // the cap. When the hold already ran, nothing is left to do: the next request
+  // retries anything that failed, because the dirty flag survives.
+  if (!snapshot.held() && isRemoteDbDirty()) {
     await flushRemoteDb();
   }
 }

@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import type { Db } from '../db/types.js';
@@ -159,7 +160,7 @@ let inFlight: Promise<boolean> | null = null;
 let debounceTimer: NodeJS.Timeout | null = null;
 /** Size + mtime of the last uploaded file, so a write that changed nothing
  *  (a session touch, a no-op UPDATE) does not cost another upload. */
-let lastUploaded: { size: number; mtimeMs: number } | null = null;
+let lastUploaded: { size: number; hash: string } | null = null;
 
 // Observed state, surfaced by GET /livez so an operator can tell "persistence is
 // configured and working" apart from "this instance is about to forget
@@ -219,11 +220,14 @@ export async function flushRemoteDb(): Promise<boolean> {
   inFlight = (async () => {
     try {
       if (localDb) checkpoint(localDb);
-      const stat = fs.statSync(pathAtStart);
-      if (lastUploaded && lastUploaded.size === stat.size && lastUploaded.mtimeMs === stat.mtimeMs) {
+      const body = fs.readFileSync(pathAtStart);
+      // Content, not mtime: the WAL checkpoint above rewrites the file's
+      // timestamps even when it folds nothing in, so an mtime comparison made
+      // every flush look dirty and uploaded the same bytes twice per request.
+      const hash = crypto.createHash('sha256').update(body).digest('hex');
+      if (lastUploaded && lastUploaded.size === body.length && lastUploaded.hash === hash) {
         return false;
       }
-      const body = fs.readFileSync(pathAtStart);
       const res = await fetch(objectUrl(config), {
         method: 'POST',
         headers: authHeaders(config, {
@@ -238,7 +242,7 @@ export async function flushRemoteDb(): Promise<boolean> {
         const detail = await res.text().catch(() => '');
         throw new Error(`HTTP ${res.status} ${res.statusText}${detail ? ` — ${detail.slice(0, 200)}` : ''}`);
       }
-      lastUploaded = { size: stat.size, mtimeMs: stat.mtimeMs };
+      lastUploaded = { size: body.length, hash };
       lastUploadAt = new Date().toISOString();
       lastError = null;
       console.log(`[remote-db] uploaded ${(body.length / 1024).toFixed(1)} KB to ${config.bucket}/${config.object}`);
