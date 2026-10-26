@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import type { ChatMessage } from '@fluzyai/shared/types.js';
 import { getDb, getUnifiedApiKey } from '../db/index.js';
+import { userForApiKey } from '../services/roles.js';
 
 // Per-client API keys with server-enforced system prompts (#411). A client
 // profile is a second kind of inference credential: it authenticates ONLY the
@@ -38,6 +39,13 @@ export function hashClientProfileKey(key: string): string {
 
 export type ResolvedAuth =
   | { kind: 'unified'; systemPrompt: null }
+  /**
+   * A per-account inference key (users.api_key). Behaves exactly like the
+   * deployment-wide key — no enforced prompt — but names the account it
+   * belongs to, so a shared deployment can attribute traffic and rotate one
+   * person's credential without touching anyone else's.
+   */
+  | { kind: 'user'; userId: number; systemPrompt: null }
   | { kind: 'profile'; profileId: number; name: string; systemPrompt: string | null };
 
 interface ProfileRow {
@@ -55,6 +63,12 @@ interface ProfileRow {
  */
 export function resolveAuth(token: string | undefined): ResolvedAuth | null {
   if (!token) return null;
+  // Checked before the deployment-wide key: an account key is a plain indexed
+  // lookup, and the timing-safe comparison below is the expensive one.
+  const account = userForApiKey(token);
+  if (account) {
+    return { kind: 'user', userId: account.userId, systemPrompt: null };
+  }
   if (timingSafeStringEqual(token, getUnifiedApiKey())) {
     return { kind: 'unified', systemPrompt: null };
   }

@@ -72,48 +72,53 @@ describe('Dashboard auth (#35)', () => {
     expect(status).toBe(409);
   });
 
-  // The sign-in page offers "Create account" alongside "Sign in". On a claimed
-  // install that must not hand out a second admin account unless the operator
-  // asked for it: one dashboard, one owner, unless FLUZY_ALLOW_SIGNUP=1.
-  it('refuses signup on a claimed install that did not opt in', async () => {
+  // The sign-in page offers "Create account" alongside "Sign in", and this is one
+  // deployment shared by the people who were given its URL: sign-up is open by
+  // default, each account gets its own inference key, and the provider pool it
+  // routes through is the admin's.
+  it('opens signup to everyone by default', async () => {
     const { status, body } = await call(app, 'POST', '/api/auth/register', {
-      email: 'stranger@example.com',
-      password: 'supersecret',
+      email: 'teammate@example.com',
+      password: 'anothersecret',
     });
-    expect(status).toBe(403);
-    expect(body.error.type).toBe('signup_disabled');
-    expect(body.needsSetup).toBeUndefined();
-    // Status tells the UI the same thing, so it can explain instead of offering
-    // a form whose submit is guaranteed to fail.
-    expect((await call(app, 'GET', '/api/auth/status')).body.signupEnabled).toBe(false);
+    expect(status).toBe(201);
+    expect(typeof body.token).toBe('string');
+    expect(body.email).toBe('teammate@example.com');
+    // A normal account, not an operator.
+    expect(body.role).toBe('user');
+    expect(body.isAdmin).toBe(false);
+    expect((await call(app, 'GET', '/api/keys', undefined, body.token)).status).toBe(200);
+    expect((await call(app, 'GET', '/api/auth/status')).body.signupEnabled).toBe(true);
+
+    // Duplicate addresses are a 409, not a second account for the same email.
+    const again = await call(app, 'POST', '/api/auth/register', {
+      email: 'teammate@example.com',
+      password: 'anothersecret',
+    });
+    expect(again.status).toBe(409);
+    expect(again.body.error.type).toBe('email_taken');
+
+    // The new account signs in like any other.
+    expect((await call(app, 'POST', '/api/auth/login', {
+      email: 'teammate@example.com',
+      password: 'anothersecret',
+    })).status).toBe(200);
   });
 
-  it('allows additional accounts when FLUZY_ALLOW_SIGNUP=1', async () => {
-    process.env.FLUZY_ALLOW_SIGNUP = '1';
+  // An operator who wants a single-account install can still say so.
+  it('closes signup when FLUZY_ALLOW_SIGNUP=0', async () => {
+    process.env.FLUZY_ALLOW_SIGNUP = '0';
     try {
       const { status, body } = await call(app, 'POST', '/api/auth/register', {
-        email: 'teammate@example.com',
-        password: 'anothersecret',
+        email: 'stranger@example.com',
+        password: 'supersecret',
       });
-      expect(status).toBe(201);
-      expect(typeof body.token).toBe('string');
-      expect(body.email).toBe('teammate@example.com');
-      expect((await call(app, 'GET', '/api/keys', undefined, body.token)).status).toBe(200);
-      expect((await call(app, 'GET', '/api/auth/status')).body.signupEnabled).toBe(true);
-
-      // Duplicate addresses are a 409, not a second account for the same email.
-      const again = await call(app, 'POST', '/api/auth/register', {
-        email: 'teammate@example.com',
-        password: 'anothersecret',
-      });
-      expect(again.status).toBe(409);
-      expect(again.body.error.type).toBe('email_taken');
-
-      // The new account signs in like any other.
-      expect((await call(app, 'POST', '/api/auth/login', {
-        email: 'teammate@example.com',
-        password: 'anothersecret',
-      })).status).toBe(200);
+      expect(status).toBe(403);
+      expect(body.error.type).toBe('signup_disabled');
+      expect(body.needsSetup).toBeUndefined();
+      // Status tells the UI the same thing, so it can explain instead of offering
+      // a form whose submit is guaranteed to fail.
+      expect((await call(app, 'GET', '/api/auth/status')).body.signupEnabled).toBe(false);
     } finally {
       delete process.env.FLUZY_ALLOW_SIGNUP;
     }

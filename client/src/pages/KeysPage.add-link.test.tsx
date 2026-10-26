@@ -9,7 +9,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { I18nProvider } from '@/i18n'
 import KeysPage from './KeysPage'
 
-vi.mock('@/lib/api', () => ({ apiFetch: vi.fn(async () => []) }))
+// The page asks /api/admin/me who is signed in: only an admin may change the
+// shared provider pool, so the Add key flow is only mounted for one.
+const session = vi.hoisted(() => ({ admin: true }))
+vi.mock('@/lib/api', () => ({
+  apiFetch: vi.fn(async (path: string) => (path === '/api/admin/me' ? { isAdmin: session.admin } : [])),
+}))
 // Only the page's own add-key wiring is under test; the sections are stubbed.
 vi.mock('@/components/keys/add-key-dialog', () => ({
   AddKeyDialog: ({ open, initialPlatform }: { open: boolean; initialPlatform?: string }) =>
@@ -29,7 +34,12 @@ vi.mock('@/components/keys/agent-compatibility-section', () => ({ AgentCompatibi
 let root: Root
 let container: HTMLDivElement
 beforeAll(() => { (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true })
-beforeEach(() => { container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container) })
+beforeEach(() => {
+  session.admin = true
+  container = document.createElement('div')
+  document.body.appendChild(container)
+  root = createRoot(container)
+})
 afterEach(() => { act(() => root.unmount()); container.remove() })
 
 function Search() { return <div data-testid="search">{useLocation().search}</div> }
@@ -67,4 +77,11 @@ it('ignores an unknown or removed provider', async () => {
 it('stays closed without the param', async () => {
   await mount('/keys')
   expect(dialog()).toBe('closed')
+})
+
+// A plain account sees the same page without the controls that would 403.
+it('does not offer the add flow to a non-admin', async () => {
+  session.admin = false
+  await mount('/keys?add=cloudflare')
+  expect(dialog()).toBeUndefined()
 })

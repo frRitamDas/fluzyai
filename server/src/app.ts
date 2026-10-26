@@ -1,4 +1,5 @@
 import express from 'express';
+import type { NextFunction, Request, Response } from 'express';
 import compression from 'compression';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -27,6 +28,8 @@ import { backupsRouter } from './routes/backups.js';
 import { cacheRouter } from './routes/cache.js';
 import { compressionRouter } from './routes/compression.js';
 import { authRouter } from './routes/auth.js';
+import { adminRouter } from './routes/admin.js';
+import { announcementsRouter } from './routes/announcements.js';
 import { docsRouter } from './routes/docs.js';
 import { mcpRouter } from './routes/mcp.js';
 import { statusRouter, providersRouter } from './routes/status.js';
@@ -36,6 +39,7 @@ import { urlTokenRouter } from './routes/url-tokens.js';
 import { updateRouter } from './routes/update.js';
 import { moderationRouter } from './routes/moderation.js';
 import { requireAuth } from './middleware/requireAuth.js';
+import { requireAdmin } from './middleware/requireAdmin.js';
 import { createHostGuard } from './middleware/allowed-hosts.js';
 import { createProxyRateLimiter, createAdminRateLimiter } from './middleware/rateLimit.js';
 
@@ -95,6 +99,19 @@ function isHttpsRequest(req: express.Request): boolean {
 // reported in #734.
 function isTrustworthyOrigin(req: express.Request): boolean {
   return isHttpsRequest(req) || LOOPBACK_HOST_RE.test(req.hostname ?? '');
+}
+
+/**
+ * `requireAdmin` for mutating requests only. Reads of a shared resource (which
+ * providers exist) stay available to every signed-in account; anything that
+ * changes it does not.
+ */
+function adminOnlyForWrites(req: Request, res: Response, next: NextFunction): void {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+    next();
+    return;
+  }
+  requireAdmin(req, res, next);
 }
 
 export function createApp(config?: Config) {
@@ -261,7 +278,21 @@ export function createApp(config?: Config) {
   // tight per-IP bucket on top of it.
   app.use('/api/keys/export', createAdminRateLimiter(EXPORT_RATE_LIMIT_RPM));
 
-  app.use('/api/keys', requireAuth, keysRouter);
+  // Announcements are readable without a session: the home page shows them too.
+  app.use('/api/announcements', announcementsRouter);
+
+  // The admin panel: the shared provider pool, the accounts, the banner. Only
+  // this deployment's owner gets in (requireAdmin), which is enforced here
+  // rather than by hiding a nav link.
+  app.use('/api/admin', requireAuth, requireAdmin, adminRouter);
+
+  // Provider keys are the shared pool every account routes through, so the Keys
+  // page is read-only for everyone but an admin: adding, editing, deleting,
+  // importing or exporting a key changes what every account can call. Reads stay
+  // open — the dashboard shows which providers are configured, and that is not a
+  // secret — and the guard sits in front of the router so it also covers the
+  // routes the router registers internally.
+  app.use('/api/keys', requireAuth, adminOnlyForWrites, keysRouter);
   // Per-client key management (#411). Dashboard-session gated like the rest of
   // /api — the profile keys it mints authenticate only the /v1 inference
   // surface and are never valid here.

@@ -20,6 +20,8 @@ import { ProviderChecklistSection } from '@/components/keys/provider-checklist-s
 import { AddKeyDialog } from '@/components/keys/add-key-dialog'
 import { ExportKeysDialog } from '@/components/keys/export-keys-dialog'
 import { AgentCompatibilitySection } from '@/components/keys/agent-compatibility-section'
+import { useAdminStatus } from '@/lib/use-admin'
+import { toast } from '@/lib/toast'
 
 type KeysTab = 'providers' | 'quotaSignals' | 'apiKey' | 'anthropic' | 'agents'
 const KEYS_TABS: { id: KeysTab; labelKey: string }[] = [
@@ -48,8 +50,16 @@ export default function KeysPage() {
     if (searchParams.has('add')) setSearchParams(prev => { prev.delete('add'); return prev }, { replace: true })
   }, [searchParams, setSearchParams])
   const [exportOpen, setExportOpen] = useState(false)
+  // The provider pool is shared by every account, so only an admin may change
+  // it. Ordinary users still see which providers are configured (and which
+  // models that makes available) — they just cannot add, remove or export keys.
+  const { isAdmin } = useAdminStatus()
 
   const openAddKey = (platform: Platform | '' = '') => {
+    if (!isAdmin) {
+      toast.error('Provider keys are managed by this deployment\'s admin. Your own API key is on the API key tab.')
+      return
+    }
     setAddPlatform(platform)
     setAddOpen(true)
   }
@@ -82,18 +92,18 @@ export default function KeysPage() {
         description={t('keys.pageDescription')}
         actions={
           <>
-            {(tab === 'providers' || tab === 'quotaSignals') && keys.length > 0 && (
+            {isAdmin && (tab === 'providers' || tab === 'quotaSignals') && keys.length > 0 && (
               <Button variant="outline" size="sm" onClick={() => checkAll.mutate()} disabled={checkAll.isPending}>
                 {checkAll.isPending ? t('keys.checking') : t('keys.checkAll')}
               </Button>
             )}
-            {keys.length > 0 && (
+            {isAdmin && keys.length > 0 && (
               <Button variant="outline" size="sm" onClick={() => setExportOpen(true)}>
                 <Download className="size-3.5" />
                 {t('keys.export')}
               </Button>
             )}
-            {tab === 'providers' && (
+            {isAdmin && tab === 'providers' && (
               <Button size="sm" onClick={() => openAddKey()}>
                 <Plus className="size-3.5" />
                 {t('keys.addKey')}
@@ -135,7 +145,7 @@ export default function KeysPage() {
         )}
       </div>
 
-      <AddKeyDialog open={addOpen} onOpenChange={setAddOpen} initialPlatform={addPlatform || undefined} />
+      {isAdmin && <AddKeyDialog open={addOpen} onOpenChange={setAddOpen} initialPlatform={addPlatform || undefined} />}
       {/* Mounted only while open so the export flow always starts at step one
           and never retains a previously typed password. */}
       {exportOpen && <ExportKeysDialog open={exportOpen} onOpenChange={setExportOpen} />}
