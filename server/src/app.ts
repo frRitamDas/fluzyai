@@ -187,6 +187,16 @@ export function createApp(config?: Config) {
 
     next();
   });
+  // API, dashboard and proxy responses are per-user and change on every request,
+  // so a shared cache in front of the process must never store them. Serverless
+  // deployments put a CDN there; without an explicit directive a GET can be
+  // cached heuristically and served stale (observed on /livez). Static assets
+  // are unaffected: express.static sets its own immutable/no-cache policy below,
+  // which overrides this default for those responses only.
+  app.use((_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
   app.use(cors({
     origin(origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
       callback(null, !origin || allowedCorsOrigins.has(origin));
