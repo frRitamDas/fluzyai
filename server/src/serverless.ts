@@ -10,6 +10,7 @@ import { applyDeclarativeConfigFromEnv } from './services/declarative-config.js'
 import { loadCacheFromDb } from './services/cache.js';
 import { restoreProxySettings } from './lib/proxy.js';
 import { firstRunSetup } from './lib/first-run.js';
+import { syncOwnerRoles } from './services/roles.js';
 import { warnOnEnvDrift } from './lib/env-drift.js';
 import { installLogRedaction } from './lib/log-redaction.js';
 import {
@@ -138,6 +139,10 @@ async function boot(): Promise<{ app: Handler; dbPath: string }> {
   // and the setup code would have to be copied into the form by hand. Without
   // it, the one-time setup code is minted (FLUZY_SETUP_CODE pins it).
   firstRunSetup();
+
+  // Owner addresses administer the deployment; do it before the first request
+  // is served so the panel exists for the account that owns it.
+  syncOwnerRoles();
 
   const app = createApp(config);
 

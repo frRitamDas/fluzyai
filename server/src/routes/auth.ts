@@ -16,6 +16,7 @@ import {
   desktopSessionToken,
 } from '../services/auth.js';
 import { setupCodeMatches, clearSetupCode } from '../lib/setup-code.js';
+import { isAdminSession, setFirstAdmin, syncRoleForEmail } from '../services/roles.js';
 import { generateResetCode, resetCodeMatches, clearResetCode } from '../lib/reset-code.js';
 
 export const authRouter = Router();
@@ -190,6 +191,9 @@ export function desktopSignInAllowed(req: Request): boolean {
 authRouter.get('/status', (req: Request, res: Response) => {
   const session = validateSession(bearer(req));
   const unclaimed = userCount() === 0;
+  // An owner address is promoted the moment the account is seen, so signing in
+  // (or merely reloading) is enough to get the panel — no separate grant step.
+  const role = session ? syncRoleForEmail(session.email) : null;
   res.json({
     needsSetup: unclaimed,
     // Whether the very same remote caller would be stopped by the setup code.
@@ -202,6 +206,8 @@ authRouter.get('/status', (req: Request, res: Response) => {
     signupEnabled: unclaimed || signupAllowed(),
     authenticated: !!session,
     email: session?.email ?? null,
+    role,
+    isAdmin: session ? isAdminSession(session.userId) : false,
     desktop: desktopSignInAllowed(req),
   });
 });
@@ -221,7 +227,13 @@ authRouter.post('/desktop-session', (req: Request, res: Response) => {
 // deployment meant for a team can turn it on; a public URL should not.
 function signupAllowed(): boolean {
   const raw = (process.env.FLUZY_ALLOW_SIGNUP ?? '').trim().toLowerCase();
-  return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
+  // Open by default: this is one deployment shared by the people who were given
+  // its URL, each with their own account and their own inference key. The shared
+  // *provider* pool is admin-managed, so a signup hands out no credential beyond
+  // the right to call /v1 through it. Set FLUZY_ALLOW_SIGNUP=0 to close a
+  // deployment that is meant to have exactly one account.
+  if (raw === '0' || raw === 'false' || raw === 'no' || raw === 'off') return false;
+  return true;
 }
 
 // Create the dashboard account from the sign-in page.
@@ -266,8 +278,11 @@ authRouter.post('/register', (req: Request, res: Response) => {
     const user = createUser(parsed.data.email, parsed.data.password);
     // Whichever account exists first claims a fresh install.
     if (unclaimed) clearSetupCode();
+    // An owner address becomes an admin here, before it ever signs in, so the
+    // panel is simply there on the first load.
+    const role = syncRoleForEmail(user.email);
     const token = createSession(user.userId);
-    res.status(201).json({ token, email: user.email });
+    res.status(201).json({ token, email: user.email, role, isAdmin: role === 'admin' });
   } catch (error) {
     if ((error as { code?: string })?.code === 'email_taken') {
       res.status(409).json({ error: { message: 'An account with that email already exists', type: 'email_taken' } });
@@ -308,8 +323,10 @@ authRouter.post('/setup', (req: Request, res: Response) => {
   }
   const user = createUser(parsed.data.email, parsed.data.password);
   clearSetupCode(); // one-time: the dashboard is now claimed
+  // The account that claims a fresh install administers it.
+  const role = syncRoleForEmail(user.email) === 'admin' ? 'admin' : setFirstAdmin(user.userId);
   const token = createSession(user.userId);
-  res.status(201).json({ token, email: user.email });
+  res.status(201).json({ token, email: user.email, role, isAdmin: role === 'admin' });
 });
 
 authRouter.post('/login', (req: Request, res: Response) => {
@@ -338,8 +355,9 @@ authRouter.post('/login', (req: Request, res: Response) => {
   }
 
   clearFailures(email);
+  const role = syncRoleForEmail(user.email);
   const token = createSession(user.userId);
-  res.json({ token, email: user.email });
+  res.json({ token, email: user.email, role, isAdmin: role === 'admin' });
 });
 
 authRouter.post('/logout', (req: Request, res: Response) => {

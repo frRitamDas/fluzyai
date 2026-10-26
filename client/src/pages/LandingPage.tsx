@@ -17,6 +17,7 @@ import {
 import { buttonVariants } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
+import { AnnouncementBanner } from '@/components/announcement-banner'
 
 /**
  * The public home page: what Fluzy AI is, for someone who has not signed in yet.
@@ -127,6 +128,10 @@ export function LandingPage({ needsSetup }: { needsSetup: boolean }) {
           </nav>
         </div>
       </header>
+
+      {/* Operator notices (maintenance, a provider outage) reach visitors before
+          they create an account, not only after they sign in. */}
+      <AnnouncementBanner />
 
       <main>
         {/* Hero */}

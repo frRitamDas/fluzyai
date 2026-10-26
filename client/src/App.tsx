@@ -16,6 +16,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { AuthGate, ChangeCredentialsModal } from '@/components/auth-gate'
 import { OnboardingDialog } from '@/components/onboarding-dialog'
+import { AnnouncementBanner } from '@/components/announcement-banner'
+import AdminPage from '@/pages/AdminPage'
 import { CommandPalette } from '@/components/command-palette'
 import { openCommandPalette } from '@/components/command-palette-state'
 import { ErrorBoundary } from '@/components/error-boundary'
@@ -28,6 +30,7 @@ import { NewBuildPrompt } from '@/components/new-build-prompt'
 import { usePremium } from '@/hooks/use-premium'
 import { I18nProvider, useI18n } from '@/i18n'
 import { logout } from '@/lib/api'
+import { useAdminStatus } from '@/lib/use-admin'
 import { toast } from '@/lib/toast'
 import { ThemeProvider } from '@/theme'
 import KeysPage from '@/pages/KeysPage'
@@ -258,6 +261,10 @@ function Navbar() {
   const [credentialsMode, setCredentialsMode] = useState<'password' | 'email' | null>(null)
   const { data: premium, licensed, isLoading: premiumLoading, isError: premiumError } = usePremium()
   const showUpgrade = Boolean(premium) && !licensed && !premiumLoading && !premiumError
+  // Only an admin sees the Admin entry; everyone else just gets no extra slot.
+  // The page behind it is gated server-side regardless.
+  const { isAdmin } = useAdminStatus()
+  const items = isAdmin ? [...navItems, { to: '/admin', labelKey: 'nav.admin' }] : navItems
 
   return (
     <>
@@ -279,7 +286,7 @@ function Navbar() {
             className="ms-10 hidden items-center gap-6 md:flex"
             style={isDesktopApp ? ({ WebkitAppRegion: 'no-drag' } as React.CSSProperties) : undefined}
           >
-            {navItems.map((item) => {
+            {items.map((item) => {
               const menu = navMenus[item.to]
               return menu ? (
                 // Split control: the label navigates, the chevron reveals the
@@ -357,7 +364,7 @@ function Navbar() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-52">
                 <DropdownMenuGroup>
-                  {navItems.map((item) => {
+                  {items.map((item) => {
                     const menu = navMenus[item.to]
                     return menu ? (
                       <DropdownMenuSub key={item.to}>
@@ -479,6 +486,9 @@ function App() {
                   flow, and a padded route stretches to nothing it can show. */}
               <AppShell>
                 <Navbar />
+                {/* Global notices from the admin panel: visible on every page,
+                    dismissible per notice. */}
+                <AnnouncementBanner />
                 <PageContainer>
                   <PageBoundary>
                     <Routes>
@@ -505,6 +515,7 @@ function App() {
                       <Route path="/analytics" element={<AnalyticsPage />} />
                       <Route path="/logs" element={<LogsPage />} />
                       <Route path="/premium" element={<PremiumPage />} />
+                      <Route path="/admin" element={<AdminPage />} />
                       <Route path="/test" element={<Navigate to="/playground" replace />} />
                       <Route path="/health" element={<Navigate to="/keys" replace />} />
                       <Route path="*" element={<NotFoundPage />} />

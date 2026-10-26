@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { getUnifiedApiKey, regenerateUnifiedKey, getSetting, setSetting, getDb } from '../db/index.js';
+import { isAdminSession, rotateUserApiKey, userApiKey } from '../services/roles.js';
 import { applyProxyUrl, applyProxyMode, applyProxyEnabled, applyProxyBypass, applyFetchRelayToken, encodeFetchRelayToken, isProxyActive, getProxyUrl, getProxyMode, getFetchRelayToken, isProxyEnabled, getProxyBypassPlatforms, probeProxyUrl, fetchRelayUrlError, DEFAULT_PROXY_PROBE_TARGET, PROXY_MODES, PROXY_SCHEMES } from '../lib/proxy.js';
 import { getProvider } from '../providers/index.js';
 import type { Platform } from '@fluzyai/shared/types.js';
@@ -473,15 +474,53 @@ settingsRouter.put('/guardrails', (req: Request, res: Response) => {
   });
 });
 
-// Get the unified API key
-settingsRouter.get('/api-key', (_req: Request, res: Response) => {
-  res.json({ apiKey: getUnifiedApiKey() });
+// The signed-in account's inference key.
+//
+// Every account now has its own (`users.api_key`, minted on first read), so a
+// shared deployment hands out a credential per person: rotating one does not
+// break anyone else, and a departing user's key can be retired on its own. The
+// deployment-wide key in `settings` is still accepted by /v1 — it is what
+// existing scripts and pre-multi-user installs use — but the dashboard shows
+// you YOUR key, which is the one worth copying into a client.
+settingsRouter.get('/api-key', (req: Request, res: Response) => {
+  const user = (req as Request & { user?: { userId: number } }).user;
+  if (!user) {
+    res.status(401).json({ error: { message: 'Authentication required' } });
+    return;
+  }
+  res.json({ apiKey: userApiKey(user.userId), scope: 'account' });
 });
 
-// Regenerate the unified API key
-settingsRouter.post('/api-key/regenerate', (_req: Request, res: Response) => {
-  const newKey = regenerateUnifiedKey();
-  res.json({ apiKey: newKey });
+// Rotate the signed-in account's key. Other accounts (and the deployment-wide
+// key, if the owner still uses it) are unaffected.
+settingsRouter.post('/api-key/regenerate', (req: Request, res: Response) => {
+  const user = (req as Request & { user?: { userId: number } }).user;
+  if (!user) {
+    res.status(401).json({ error: { message: 'Authentication required' } });
+    return;
+  }
+  res.json({ apiKey: rotateUserApiKey(user.userId), scope: 'account' });
+});
+
+// The deployment-wide key, for the one case per-account keys cannot serve: an
+// existing script that must keep working, or an admin moving a deployment over.
+// Admin-only, because it authenticates as the deployment itself.
+settingsRouter.get('/api-key/deployment', (req: Request, res: Response) => {
+  const user = (req as Request & { user?: { userId: number } }).user;
+  if (!user || !isAdminSession(user.userId)) {
+    res.status(403).json({ error: { message: 'Admin access required', type: 'admin_required' } });
+    return;
+  }
+  res.json({ apiKey: getUnifiedApiKey(), scope: 'deployment' });
+});
+
+settingsRouter.post('/api-key/deployment/regenerate', (req: Request, res: Response) => {
+  const user = (req as Request & { user?: { userId: number } }).user;
+  if (!user || !isAdminSession(user.userId)) {
+    res.status(403).json({ error: { message: 'Admin access required', type: 'admin_required' } });
+    return;
+  }
+  res.json({ apiKey: regenerateUnifiedKey(), scope: 'deployment' });
 });
 
 // Get the proxy settings

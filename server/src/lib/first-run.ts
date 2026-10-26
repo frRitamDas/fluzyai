@@ -1,4 +1,5 @@
 import { userCount, createUser } from '../services/auth.js';
+import { setFirstAdmin } from '../services/roles.js';
 import { clearSetupCode, generateSetupCode } from './setup-code.js';
 
 /**
@@ -90,8 +91,9 @@ export function seedAdminFromEnv(): AdminSeedResult {
 
   if (userCount() > 0) return 'exists';
 
+  let created: { userId: number; email: string };
   try {
-    createUser(email, password);
+    created = createUser(email, password);
   } catch (error) {
     const code = (error as { code?: string })?.code;
     if (code === 'email_taken') return 'exists';
@@ -101,7 +103,10 @@ export function seedAdminFromEnv(): AdminSeedResult {
     return 'invalid';
   }
 
-  // The install is claimed, so there is no first-run window left to protect.
+  // The install is claimed, so there is no first-run window left to protect —
+  // and whoever's address was configured here is the person hosting it, so the
+  // account administers the deployment regardless of the admin-email list.
+  setFirstAdmin(created.userId);
   clearSetupCode();
   console.log(`[admin] dashboard account created for ${email} (from FLUZY_ADMIN_EMAIL)`);
   return 'created';

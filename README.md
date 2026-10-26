@@ -35,6 +35,7 @@ Live dashboard: **[fluzyaiorg.vercel.app](https://fluzyaiorg.vercel.app)**
 - [Works with OpenAI-compatible clients](#works-with-openai-compatible-clients)
 - [Languages](#languages)
 - [Premium (live catalog)](#premium-live-catalog)
+- [Admin panel](#admin-panel)
 - [Using the API](#using-the-api)
 - [Screenshots](#screenshots)
 - [How it works](#how-it-works)
@@ -286,6 +287,30 @@ live-feed routers receive the update the same day we ship it.
 
 The catalog server never sees your prompts, completions, or provider keys — the
 router stays fully self-hosted either way.
+
+## Admin panel
+
+One deployment, many accounts. Sign-up is open, and each account gets its own
+inference key on **Keys → API key** — rotating it affects nobody else. Provider
+keys are shared: they feed the single pool every account routes through, so they
+belong to the admin.
+
+The admin is decided by email, automatically — no grant step. The account whose
+address is in `FLUZY_ADMIN_EMAILS` (or the built-in owner list) is promoted at
+signup, at sign-in and on every boot, and the account that claims a fresh install
+is promoted too. That account gets an **Admin** entry in the navigation:
+
+- **Providers & keys** — add a key for Groq, OpenRouter, Google AI Studio and the
+  rest. It goes into the shared pool immediately, so every user can call those
+  models on the next request; no publish or restart. Keys are probed as they are
+  added and can be disabled or removed.
+- **Accounts** — see who has signed up and promote or demote admins. The last
+  admin cannot be demoted, and you cannot demote yourself.
+- **Announcements** — a banner shown on the dashboard and on the home page,
+  dismissible per visitor.
+
+Ordinary accounts keep everything else: every model, every modality, the
+playground, analytics and their own key.
 
 ## Using the API
 

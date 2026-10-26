@@ -16,6 +16,7 @@ import { applyDeclarativeConfigFromEnv } from './services/declarative-config.js'
 import { restoreDbBackupIfNeeded, startDbBackupPump } from './lib/db-backup.js';
 import { startBackupScheduler } from './services/backups.js';
 import { firstRunSetup } from './lib/first-run.js';
+import { syncOwnerRoles } from './services/roles.js';
 import { warnOnEnvDrift } from './lib/env-drift.js';
 import { warnOnRoutingOverrideDrift } from './services/model-weight-overrides.js';
 import { installLogRedaction } from './lib/log-redaction.js';
@@ -70,6 +71,14 @@ async function main() {
   // loopback browser can finish setup without it; a remote caller must supply
   // it (see routes/auth.ts). Re-evaluated each boot.
   firstRunSetup();
+
+  // An account whose address is on the admin list administers this deployment:
+  // promote it at boot so the panel is there on the first request, rather than
+  // waiting for that person to sign in.
+  const promoted = syncOwnerRoles();
+  if (promoted > 0) {
+    console.log(`[roles] granted admin access to ${promoted} account${promoted === 1 ? '' : 's'}`);
+  }
 
   // Load the persisted proxy settings from the DB (env var wins if set).
   // Must happen after initDb so the settings table is ready.

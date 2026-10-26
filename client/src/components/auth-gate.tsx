@@ -47,9 +47,9 @@ interface AuthStatus {
   // A remote browser would be stopped by the one-time setup code, so the form
   // asks for it alongside the credentials instead of after a rejected submit.
   setupCodeRequired?: boolean
-  // Whether a new account can be created at all: true on an unclaimed install
-  // (that is the first account) and on a claimed one only when the operator set
-  // FLUZY_ALLOW_SIGNUP=1.
+  // Whether a new account can be created at all. Open by default (the deployment
+  // is shared: one account per person, one admin-managed provider pool); the
+  // server reports false only when the operator set FLUZY_ALLOW_SIGNUP=0.
   signupEnabled?: boolean
   authenticated: boolean
   email: string | null
