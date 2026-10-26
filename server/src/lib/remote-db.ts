@@ -55,6 +55,39 @@ function uploadTimeoutMs(): number {
 }
 const UPLOAD_DEBOUNCE_MS = 1_500;
 
+/**
+ * How long one flush may stay unsettled before the next one ignores it.
+ *
+ * A flush runs inside the invocation that triggered it, so a platform that
+ * freezes the instance mid-request (Vercel does, the moment the response is
+ * written) suspends the in-flight fetch instead of failing it: the promise never
+ * settles, neither the success path nor the catch runs, and `inFlight` stays set
+ * for the life of the instance. Every later flush then short-circuits on that
+ * dead promise and the deployment stops persisting *silently* — health output
+ * showed `pendingWrite: true`, `lastUploadAt: null`, `lastError: null`, which is
+ * exactly "the change is on this instance and nowhere else". Treating a flush
+ * that has outlived its budget as abandoned restores the retry.
+ */
+function flushDeadlineMs(): number {
+  const raw = Number.parseInt(process.env.FLUZY_REMOTE_DB_FLUSH_DEADLINE_MS ?? '', 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : 15_000;
+}
+
+/**
+ * Total wall-clock budget for one flush. A frozen fetch never fires its own
+ * AbortSignal timeout — timers do not run while the instance is suspended — so
+ * the flush needs a settle-by deadline of its own that is shorter than the
+ * response hold, or the caller waits on a promise the platform will never
+ * resume. Derived from the per-call budget so tuning one knob keeps them in
+ * proportion: a pre-upload HEAD, the content check, two upload attempts and the
+ * post-upload HEAD.
+ */
+function flushTimeoutMs(): number {
+  const raw = Number.parseInt(process.env.FLUZY_REMOTE_DB_FLUSH_TIMEOUT_MS ?? '', 10);
+  if (Number.isFinite(raw) && raw > 0) return raw;
+  return Math.max(6_000, uploadTimeoutMs() * 2 + 2_000);
+}
+
 export interface RemoteDbConfig {
   url: string;
   key: string;
@@ -204,6 +237,18 @@ let staleSince: string | null = null;
 // different quoting, a storage-side re-encode) must not be mistaken for another
 // writer, or the guard would stop a healthy deployment from persisting at all.
 let knownContentHash: string | null = null;
+// When the current in-flight flush started, so a promise that outlived its
+// budget can be abandoned instead of blocking every later attempt.
+let inFlightStartedAt = 0;
+
+// Why an upload did or did not happen. "Never uploaded" used to look identical
+// from the outside whether nothing had changed or the instance was wedged, so
+// the last outcome is recorded and exposed next to the rest of the state.
+let flushAttempts = 0;
+let flushUploads = 0;
+let flushAbandoned = 0;
+let lastFlushAt: string | null = null;
+let lastFlushOutcome: string | null = null;
 
 export interface RemoteDbStatus {
   configured: boolean;
@@ -216,6 +261,14 @@ export interface RemoteDbStatus {
   lastError: string | null;
   /** Set when another instance wrote a newer snapshot than this one holds. */
   staleSince: string | null;
+  /** Upload bookkeeping, so "nothing to upload" is distinguishable from "stuck". */
+  flush: {
+    attempts: number;
+    uploads: number;
+    abandoned: number;
+    lastAttemptAt: string | null;
+    lastOutcome: string | null;
+  };
 }
 
 export function remoteDbStatus(): RemoteDbStatus {
@@ -230,6 +283,13 @@ export function remoteDbStatus(): RemoteDbStatus {
     pendingWrite: dirty,
     lastError,
     staleSince,
+    flush: {
+      attempts: flushAttempts,
+      uploads: flushUploads,
+      abandoned: flushAbandoned,
+      lastAttemptAt: lastFlushAt,
+      lastOutcome: lastFlushOutcome,
+    },
   };
 }
 
@@ -246,7 +306,12 @@ async function remoteEtagFor(config: RemoteDbConfig): Promise<string | null> {
     const res = await fetch(objectUrl(config), {
       method: 'HEAD',
       headers: authHeaders(config),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      // Same budget as the upload. The guard runs while a response is being
+      // held open for the snapshot, so a HEAD that may take 30 s can outlive the
+      // hold on its own — the response goes out, the instance freezes, and the
+      // upload it was guarding never happens. A HEAD this slow is a broken
+      // connection, not evidence about the object: treat it as "unknown".
+      signal: AbortSignal.timeout(uploadTimeoutMs()),
     });
     if (!res.ok) return null;
     return normalizeEtag(res.headers.get('etag'));
@@ -268,7 +333,9 @@ async function remoteContentHash(config: RemoteDbConfig): Promise<string | null>
   try {
     const res = await fetch(objectUrl(config), {
       headers: authHeaders(config),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      // Bounded like the HEAD above: this downloads the whole snapshot, so it
+      // must fit inside the response hold too.
+      signal: AbortSignal.timeout(uploadTimeoutMs()),
     });
     if (!res.ok) return null;
     const body = Buffer.from(await res.arrayBuffer());
@@ -289,7 +356,17 @@ function checkpoint(db: Db): void {
 
 /** Upload the current database file to the remote bucket. */
 export async function flushRemoteDb(): Promise<boolean> {
-  if (inFlight) return inFlight;
+  if (inFlight) {
+    if (Date.now() - inFlightStartedAt < flushDeadlineMs()) return inFlight;
+    // The previous attempt is not slow, it is gone: the instance was frozen
+    // with the request still open and the promise will never settle. Ignore it
+    // and try again, or this instance silently stops persisting for good.
+    flushAbandoned += 1;
+    console.warn(
+      '[remote-db] previous snapshot upload never settled (instance was frozen mid-flight); retrying',
+    );
+    inFlight = null;
+  }
   const config = remoteDbConfig();
   if (!config || !dirty || !localDbPath) return false;
 
@@ -300,7 +377,9 @@ export async function flushRemoteDb(): Promise<boolean> {
 
   const pathAtStart = localDbPath;
   dirty = false;
-  inFlight = (async () => {
+  flushAttempts += 1;
+  lastFlushAt = new Date().toISOString();
+  const work = (async (): Promise<boolean> => {
     try {
       if (localDb) checkpoint(localDb);
       const body = fs.readFileSync(pathAtStart);
@@ -319,6 +398,7 @@ export async function flushRemoteDb(): Promise<boolean> {
           } else {
             staleSince = new Date().toISOString();
             lastError = 'another instance wrote a newer snapshot';
+            lastFlushOutcome = 'stale';
             dirty = false; // uploading would destroy their write; stop trying
             console.warn(
               '[remote-db] skipping upload: another instance wrote a newer snapshot. ' +
@@ -333,6 +413,7 @@ export async function flushRemoteDb(): Promise<boolean> {
       // every flush look dirty and uploaded the same bytes twice per request.
       const hash = crypto.createHash('sha256').update(body).digest('hex');
       if (lastUploaded && lastUploaded.size === body.length && lastUploaded.hash === hash) {
+        lastFlushOutcome = 'unchanged';
         return false;
       }
       // One immediate retry: a cold TLS handshake to the storage host is the
@@ -362,6 +443,8 @@ export async function flushRemoteDb(): Promise<boolean> {
       lastUploadAt = new Date().toISOString();
       lastError = null;
       staleSince = null;
+      flushUploads += 1;
+      lastFlushOutcome = 'uploaded';
       // Re-read the ETag rather than trusting the upload response: the value
       // must come from the same endpoint (and same quoting) the next comparison
       // uses, or every upload after the first would look like a foreign write.
@@ -372,13 +455,48 @@ export async function flushRemoteDb(): Promise<boolean> {
       // Keep the dirty flag so the next write (or request) retries the upload.
       dirty = true;
       lastError = (error as Error)?.message ?? String(error);
+      lastFlushOutcome = `failed: ${lastError}`;
       console.warn(`[remote-db] upload failed: ${lastError}`);
       return false;
-    } finally {
-      inFlight = null;
     }
   })();
-  return inFlight;
+
+  // Settle by the deadline even if a fetch below is suspended by the platform.
+  // The work keeps running in the background and, if it does finish, still
+  // records the upload; the caller is simply not left holding the response open
+  // for a promise that may never be resumed.
+  const budget = flushTimeoutMs();
+  const attempt = (async (): Promise<boolean> => {
+    let timer: NodeJS.Timeout | undefined;
+    const guard = new Promise<boolean>(resolve => {
+      timer = setTimeout(() => {
+        lastFlushOutcome = `timed out after ${budget} ms`;
+        // Nothing was confirmed: keep the change pending so the next request
+        // (or write) retries it instead of treating it as saved.
+        dirty = true;
+        console.warn(`[remote-db] snapshot upload exceeded ${budget} ms; retrying on the next request`);
+        resolve(false);
+      }, budget);
+      timer.unref?.();
+    });
+    try {
+      return await Promise.race([work, guard]);
+    } finally {
+      // The work may still be running (that is the point of the race), but a
+      // timer that fires afterwards would mark a saved database dirty again.
+      if (timer) clearTimeout(timer);
+    }
+  })();
+
+  inFlight = attempt;
+  inFlightStartedAt = Date.now();
+  // Clear only our own attempt: an abandoned promise may settle later, and it
+  // must not wipe out the retry that replaced it.
+  const clear = (): void => {
+    if (inFlight === attempt) inFlight = null;
+  };
+  attempt.then(clear, clear);
+  return attempt;
 }
 
 function scheduleFlush(): void {
