@@ -116,6 +116,17 @@ async function boot(): Promise<{ app: Handler; dbPath: string }> {
   }
 
   initDb(dbPath, { ensureDir: true });
+
+  // Attach the snapshot writer BEFORE anything writes to this database. Boot
+  // itself writes — the declarative config, and the first-run account below —
+  // and a write made before the hook exists never marks the file dirty, so the
+  // snapshot is never uploaded and the next cold start restores nothing. (Seen
+  // exactly once in production: the account existed, yet /livez still reported
+  // lastUploadAt: null and the bucket stayed empty.)
+  if (isRemoteDbConfigured()) {
+    attachRemoteDb(getDb(), dbPath);
+  }
+
   applyDeclarativeConfigFromEnv();
   loadCacheFromDb();
   restoreProxySettings();
@@ -129,9 +140,6 @@ async function boot(): Promise<{ app: Handler; dbPath: string }> {
   firstRunSetup();
 
   const app = createApp(config);
-  if (isRemoteDbConfigured()) {
-    attachRemoteDb(getDb(), dbPath);
-  }
 
   console.log(`[serverless] ready (db: ${dbPath}${isRemoteDbConfigured() ? ', remote snapshot on' : ', local only'})`);
   return { app: app as unknown as Handler, dbPath };
