@@ -88,6 +88,16 @@ async function mount() {
 
 const text = () => container.textContent ?? ''
 
+// CI machines are slower than a laptop, and this page mounts a query per tab.
+// A single 0 ms flush asserted against whatever had happened to resolve; poll
+// instead, so the test waits for the panel rather than for the scheduler.
+async function waitFor(predicate: () => boolean, timeoutMs = 3000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (!predicate() && Date.now() < deadline) {
+    await act(async () => { await new Promise(r => setTimeout(r, 10)) })
+  }
+}
+
 it('shows the deployment stats an operator cares about', async () => {
   await mount()
   expect(text()).toContain('Admin console')
@@ -103,14 +113,14 @@ it('lists accounts and promotes one', async () => {
   act(() => {
     ;[...container.querySelectorAll('button')].find(b => b.textContent?.includes('Accounts'))?.click()
   })
-  await act(async () => { await new Promise(r => setTimeout(r, 0)) })
+  await waitFor(() => text().includes('someone@example.com'))
 
   expect(text()).toContain('someone@example.com')
 
   const promote = [...container.querySelectorAll('button')].find(b => b.textContent?.includes('Make admin'))
   expect(promote).toBeTruthy()
   act(() => promote!.click())
-  await act(async () => { await new Promise(r => setTimeout(r, 0)) })
+  await waitFor(() => requests.some(r => r.method === 'PATCH'))
 
   const patch = requests.find(r => r.method === 'PATCH')
   expect(patch?.path).toBe('/api/admin/users/2')
@@ -122,7 +132,7 @@ it('publishes an announcement', async () => {
   act(() => {
     ;[...container.querySelectorAll('button')].find(b => b.textContent?.includes('Announcements'))?.click()
   })
-  await act(async () => { await new Promise(r => setTimeout(r, 0)) })
+  await waitFor(() => container.querySelector('#ann-title') !== null)
 
   const title = container.querySelector<HTMLInputElement>('#ann-title')!
   const body = container.querySelector<HTMLTextAreaElement>('#ann-body')!
@@ -137,7 +147,7 @@ it('publishes an announcement', async () => {
 
   const publish = [...container.querySelectorAll('button')].find(b => b.textContent === 'Publish')!
   act(() => publish.click())
-  await act(async () => { await new Promise(r => setTimeout(r, 0)) })
+  await waitFor(() => requests.some(r => r.method === 'POST' && r.path === '/api/admin/announcements'))
 
   const post = requests.find(r => r.method === 'POST' && r.path === '/api/admin/announcements')
   expect(post?.body).toMatchObject({ title: 'Maintenance', body: 'Groq is rate-limited tonight.', level: 'info' })
