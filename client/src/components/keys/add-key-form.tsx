@@ -188,7 +188,7 @@ export function AddKeyForm({ onSuccess, initialPlatform }: { onSuccess: (offer?:
   return (
     <div>
       <form onSubmit={handleSubmit} className="flex flex-wrap gap-3">
-        <div className="space-y-1.5">
+        <div className="w-full space-y-1.5 sm:w-auto">
           <Label className="text-xs">{t('keys.platform')}</Label>
           <ModelCombobox
             value={platform}
@@ -200,7 +200,7 @@ export function AddKeyForm({ onSuccess, initialPlatform }: { onSuccess: (offer?:
             emptyText={t('keys.noFilterMatch')}
             align="start"
             ariaInvalid={addAttempted && !!platformError}
-            triggerClassName={`flex h-8 w-[220px] items-center justify-between gap-2 whitespace-nowrap rounded-lg border bg-transparent px-3 text-sm outline-none transition-colors hover:bg-muted/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30 ${addAttempted && platformError ? 'border-destructive' : 'border-input'}`}
+            triggerClassName={`flex h-8 w-full items-center sm:w-[220px] justify-between gap-2 whitespace-nowrap rounded-lg border bg-transparent px-3 text-sm outline-none transition-colors hover:bg-muted/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30 ${addAttempted && platformError ? 'border-destructive' : 'border-input'}`}
             header={
               <div className="flex items-center gap-2 border-b px-3 py-2">
                 <input
@@ -229,13 +229,13 @@ export function AddKeyForm({ onSuccess, initialPlatform }: { onSuccess: (offer?:
               value={accountId}
               onChange={e => setAccountId(e.target.value)}
               placeholder="a1b2c3d4…"
-              className="w-[200px] font-mono text-xs"
+              className="w-full font-mono text-xs sm:w-[200px]"
               aria-invalid={addAttempted && !!accountIdError}
             />
             {addAttempted && <FieldError error={accountIdError} />}
           </div>
         )}
-        <div className="space-y-1.5 flex-1 min-w-[240px]">
+        <div className="flex-1 space-y-1.5 min-w-0 sm:min-w-[240px]">
           <div className="flex items-center justify-between gap-2">
             <Label className="text-xs">{needsAccountId ? t('keys.apiToken') : t('keys.customApiKey')}</Label>
             {canPasteSeveral && (

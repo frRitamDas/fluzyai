@@ -50,6 +50,7 @@ import AnalyticsPage from '@/pages/AnalyticsPage'
 import LogsPage from '@/pages/LogsPage'
 import PremiumPage from '@/pages/PremiumPage'
 import NotFoundPage from '@/pages/NotFoundPage'
+import HomePage from '@/pages/HomePage'
 import AgentsPage from '@/pages/AgentsPage'
 
 // Every failed mutation surfaces as an error toast, so no action fails
@@ -74,6 +75,7 @@ const queryClient = new QueryClient({
 })
 
 const navItems = [
+  { to: '/', labelKey: 'nav.home' },
   { to: '/models', labelKey: 'nav.models' },
   { to: '/playground', labelKey: 'nav.playground' },
   { to: '/keys', labelKey: 'nav.keys' },
@@ -454,7 +456,7 @@ function PageContainer({ children }: { children: ReactNode }) {
   const location = useLocation()
   const fullBleed = FULL_BLEED_ROUTES.has(location.pathname)
   return (
-    <main className={fullBleed ? 'flex min-h-0 flex-1 flex-col' : 'mx-auto w-full max-w-6xl px-6 py-8'}>
+    <main className={fullBleed ? 'flex min-h-0 flex-1 flex-col' : 'mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8'}>
       {children}
     </main>
   )
@@ -503,7 +505,10 @@ function AppContent() {
         <PageContainer>
           <PageBoundary>
             <Routes>
-              <Route path="/" element={<Navigate to="/models/chat" replace />} />
+              {/* "/" is the signed-in home screen. It used to redirect to the
+                  model table, which dropped everyone into the middle of a dense
+                  page with no idea where to start. */}
+              <Route path="/" element={<HomePage />} />
               <Route path="/models" element={<Navigate to="/models/chat" replace />} />
               <Route path="/models/chat" element={<FallbackPage />} />
               <Route path="/models/chat/:id" element={<ModelDetailPage />} />

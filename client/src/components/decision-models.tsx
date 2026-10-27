@@ -128,14 +128,14 @@ function TryDecision({ models }: { models: DecisionModel[] }) {
         </div>
       </div>
       <div className="flex flex-wrap items-end gap-3">
-        <div className="space-y-1.5">
+        <div className="w-full space-y-1.5 sm:w-auto">
           <Label className="text-xs">{t('decision.tryModel')}</Label>
           <Select
             value={model}
             onValueChange={value => setModel(String(value))}
             items={[{ value: AUTO, label: t('decision.tryAuto') }, ...enabled.map(m => ({ value: m.modelId, label: m.displayName }))]}
           >
-            <SelectTrigger className="w-[220px]"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-full sm:w-[220px]"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value={AUTO} label={t('decision.tryAuto')}>{t('decision.tryAuto')}</SelectItem>
               {enabled.map(m => (

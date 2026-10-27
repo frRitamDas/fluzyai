@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo, useCallback, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronRight, CircleAlert, FileText, Globe, X } from 'lucide-react'
+import { ChevronRight, CircleAlert, FileText, Globe, Menu, SlidersHorizontal, X } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { buildModelOptions } from '@/lib/model-groups'
 import type { Chain } from '@/components/chain-manager'
@@ -68,6 +68,7 @@ import {
   type FusionPanelEntry,
 } from '@/lib/playground-conversations'
 import { useI18n } from '@/i18n'
+import { useIsCompact } from '@/lib/use-media-query'
 
 interface FallbackEntry {
   modelDbId: number
@@ -297,6 +298,10 @@ export default function PlaygroundPage() {
   const [conversationId, setConversationId] = useState<number | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(() => initialRailOpen(SIDEBAR_OPEN_KEY))
   const [settingsOpen, setSettingsOpen] = useState<boolean>(() => initialRailOpen(SETTINGS_OPEN_KEY))
+  // Phone widths: both rails become drawers over the transcript instead of
+  // columns beside it (see the components). The stored open/closed preference is
+  // still honoured on a wide screen; it is simply not applied here.
+  const compact = useIsCompact()
   // Mirrors of state the async save paths read AFTER their closure was made:
   // a stream that started before the row existed still has to save into it.
   const conversationIdRef = useRef<number | null>(null)
@@ -629,6 +634,9 @@ export default function PlaygroundPage() {
   }
 
   const toggleSidebar = () => {
+    // On a phone the two rails are the same drawer slot, so opening one has to
+    // dismiss the other; on a wide screen they are independent columns.
+    if (compact) setSettingsOpen(false)
     setSidebarOpen(open => {
       localStorage.setItem(SIDEBAR_OPEN_KEY, String(!open))
       return !open
@@ -636,6 +644,7 @@ export default function PlaygroundPage() {
   }
 
   const toggleSettings = () => {
+    if (compact) setSidebarOpen(false)
     setSettingsOpen(open => {
       localStorage.setItem(SETTINGS_OPEN_KEY, String(!open))
       return !open
@@ -1054,6 +1063,7 @@ export default function PlaygroundPage() {
         conversations={conversations}
         activeId={conversationId}
         open={sidebarOpen}
+        overlay={compact}
         onToggle={toggleSidebar}
         onNew={handleNewConversation}
         onSelect={handleSelectConversation}
@@ -1062,7 +1072,35 @@ export default function PlaygroundPage() {
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <div ref={transcriptRef} className="min-h-0 flex-1 overflow-y-auto p-6">
+        {/* Phone toolbar. The rails are drawers at this width, so their open
+            buttons have to live somewhere always visible: a compact strip above
+            the transcript, sharing a row with the current model. */}
+        {compact && (
+          <div className="flex shrink-0 items-center gap-1 border-b px-2 py-1.5">
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              aria-label={sidebarOpen ? t('playgroundSessions.hideSidebar') : t('playgroundSessions.showSidebar')}
+              aria-expanded={sidebarOpen}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              <Menu className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <p className="min-w-0 flex-1 truncate text-center text-xs font-medium text-muted-foreground">
+              {activeModelLabel}
+            </p>
+            <button
+              type="button"
+              onClick={toggleSettings}
+              aria-label={settingsOpen ? t('playground.hideSettings') : t('playground.showSettings')}
+              aria-expanded={settingsOpen}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
+        )}
+        <div ref={transcriptRef} className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
           {/* The chat sits in a centred column; the composer below shares its width. */}
           <div className="mx-auto h-full w-full max-w-3xl space-y-4">
           {messages.length === 0 ? (
@@ -1321,6 +1359,7 @@ export default function PlaygroundPage() {
       ) : (
       <SettingsRail
         open={settingsOpen}
+        overlay={compact}
         onToggle={toggleSettings}
         modelValue={selectedModel}
         modelOptions={pickerOptions}

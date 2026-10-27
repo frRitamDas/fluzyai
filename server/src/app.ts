@@ -33,6 +33,7 @@ import { announcementsRouter } from './routes/announcements.js';
 import { docsRouter } from './routes/docs.js';
 import { mcpRouter } from './routes/mcp.js';
 import { statusRouter, providersRouter } from './routes/status.js';
+import { homeRouter } from './routes/home.js';
 import { geminiRouter } from './routes/gemini.js';
 import { ollamaRouter } from './routes/ollama.js';
 import { urlTokenRouter } from './routes/url-tokens.js';
@@ -314,6 +315,11 @@ export function createApp(config?: Config) {
   // Server logs for the dashboard viewer. Dashboard-session gated like the rest
   // of /api — these lines name providers, models and key ids, so the unified
   // /v1 key must not open them.
+  // The signed-in home screen's single summary request (account, key, catalog
+  // and usage counts in one round trip). Mounted at its own path, not on /api:
+  // a router on /api would put requireAuth in front of every later mount,
+  // including the deliberately public /api/ping.
+  app.use('/api/home', requireAuth, homeRouter);
   app.use('/api/logs', requireAuth, logsRouter);
   app.use('/api/models', requireAuth, modelsRouter);
   app.use('/api/profiles', requireAuth, profilesRouter);

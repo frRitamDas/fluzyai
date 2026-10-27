@@ -41,6 +41,12 @@ const LAYER =
 
 export interface SettingsRailProps {
   open: boolean
+  /**
+   * Phone width: the rail is a drawer over the transcript, not a column. Closed,
+   * it renders nothing so the chat keeps the whole width; the page supplies the
+   * button that opens it.
+   */
+  overlay?: boolean
   onToggle: () => void
   /** Model picker, moved here from the page header. */
   modelValue: string
@@ -157,17 +163,33 @@ export function SettingsRail({
   onWebSearchChange,
   webSearchAvailable,
   webSearchChain,
+  overlay = false,
 }: SettingsRailProps) {
   const { t } = useI18n()
   // Anything the collapsed strip should own up to: a system prompt riding on
   // every request, or a knob overriding the provider's default.
   const tweaked = samplingActiveCount(sampling) > 0 || systemPrompt.trim().length > 0 || webSearch
 
+  if (overlay && !open) return null
+
   return (
-    <div
-      className={`relative shrink-0 overflow-hidden border-s bg-card transition-[width] duration-200 ease-out motion-reduce:transition-none ${
-        open ? 'w-72' : 'w-11'
-      }`}
+    <>
+      {overlay && (
+        <button
+          type="button"
+          aria-label={t('playground.hideSettings')}
+          onClick={onToggle}
+          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px]"
+        />
+      )}
+      <div
+      className={
+        overlay
+          ? 'fixed inset-y-0 end-0 z-50 flex w-[min(19rem,88vw)] flex-col border-s bg-card shadow-xl'
+          : `relative shrink-0 overflow-hidden border-s bg-card transition-[width] duration-200 ease-out motion-reduce:transition-none ${
+              open ? 'w-72' : 'w-11'
+            }`
+      }
     >
       <div
         className={`${LAYER} w-11 items-center gap-1 py-3 ${
@@ -187,7 +209,7 @@ export function SettingsRail({
       </div>
 
       <div
-        className={`${LAYER} w-72 ${open ? 'visible opacity-100' : 'invisible opacity-0'}`}
+        className={`${LAYER} ${overlay ? 'w-[min(19rem,88vw)]' : 'w-72'} ${open ? 'visible opacity-100' : 'invisible opacity-0'}`}
       >
         <div className="flex shrink-0 items-center gap-1 px-2.5 py-1">
           <span className="flex-1 truncate text-xs font-medium text-muted-foreground">
@@ -309,6 +331,7 @@ export function SettingsRail({
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   )
 }
