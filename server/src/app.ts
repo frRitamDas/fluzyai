@@ -65,6 +65,15 @@ const DEFAULT_DASHBOARD_ORIGINS = [
 // index.html (source and build) and fails if the two ever drift apart.
 export const INLINE_BOOTSTRAP_SHA = "'sha256-IHlnvTvkBJB/Yds/ZIJbW9JV+H1bIIuxYNaCZYpowBQ='";
 
+// SHA-256 of the inline boot-guard in client/index.html — the splash and
+// watchdog that give a visitor something to read when the bundle does not run.
+// It is inline on purpose (a blocked or missing asset cannot block it) and so
+// needs its own hash: `scriptSrc` is a closed list, and a second inline script
+// that is not in it is simply never executed. csp-inline-bootstrap.test.ts
+// checks EVERY un-sourced <script> in index.html against this header, so a new
+// one cannot be added without its hash.
+export const INLINE_BOOT_SHA = "'sha256-lWDCmfNU+DQF2P/4fYDmrJ8tQzcs35FLk++kugEUd8Y='";
+
 // A build asset is safe to cache forever+immutable when its URL is
 // content-addressed. Vite parks every hashed chunk (JS, CSS, fonts, images)
 // under assets/, so that directory is the reliable signal; the -<hash>.<ext>
@@ -156,13 +165,15 @@ export function createApp(config?: Config) {
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        // index.html carries one inline <script>: the theme/direction bootstrap
-        // that has to run before first paint, or every dark-mode user gets a
-        // white flash. 'self' alone blocks it on every install, HTTPS included,
-        // so it is allowed by hash — nothing else inline is. INLINE_BOOTSTRAP_SHA
-        // is asserted against the real index.html in csp-inline-bootstrap.test.ts,
-        // so editing that script fails the suite instead of silently breaking it.
-        scriptSrc: ["'self'", INLINE_BOOTSTRAP_SHA],
+        // index.html carries two inline <script>s: the theme/direction bootstrap
+        // that has to run before first paint (or every dark-mode user gets a
+        // white flash) and the boot guard that shows a splash and an error card
+        // when the bundle cannot run at all. 'self' alone blocks both on every
+        // install, HTTPS included, so they are allowed by hash — nothing else
+        // inline is. Both hashes are asserted against the real index.html in
+        // csp-inline-bootstrap.test.ts, so editing either script fails the suite
+        // instead of silently disabling the feature in a browser.
+        scriptSrc: ["'self'", INLINE_BOOTSTRAP_SHA, INLINE_BOOT_SHA],
         styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", "data:"],
         connectSrc: ["'self'"],
