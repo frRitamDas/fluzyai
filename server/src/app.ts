@@ -72,7 +72,7 @@ export const INLINE_BOOTSTRAP_SHA = "'sha256-IHlnvTvkBJB/Yds/ZIJbW9JV+H1bIIuxYNa
 // that is not in it is simply never executed. csp-inline-bootstrap.test.ts
 // checks EVERY un-sourced <script> in index.html against this header, so a new
 // one cannot be added without its hash.
-export const INLINE_BOOT_SHA = "'sha256-lWDCmfNU+DQF2P/4fYDmrJ8tQzcs35FLk++kugEUd8Y='";
+export const INLINE_BOOT_SHA = "'sha256-HLxrVScGxgDn3UIw+i64n3qSUkmCFv9wS/5f3iF5QIQ='";
 
 // A build asset is safe to cache forever+immutable when its URL is
 // content-addressed. Vite parks every hashed chunk (JS, CSS, fonts, images)
