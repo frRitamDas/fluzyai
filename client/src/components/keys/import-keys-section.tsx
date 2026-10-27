@@ -129,7 +129,7 @@ export function ImportKeysSection({ onImported }: { onImported?: () => void } = 
   const innerContent = (
     <>
         <div className="flex flex-wrap items-end gap-3">
-          <div className="min-w-[260px] flex-1 space-y-1.5">
+          <div className="w-full min-w-0 flex-1 space-y-1.5 sm:min-w-[260px]">
             <Label className="text-xs">{t('keys.importFiles')}</Label>
             <Input
               type="file"
@@ -193,7 +193,7 @@ export function ImportKeysSection({ onImported }: { onImported?: () => void } = 
                         <Input
                           value={row.keyName}
                           onChange={e => updateRow(index, { keyName: e.target.value })}
-                          className="w-[220px] font-mono text-xs"
+                          className="w-full font-mono text-xs sm:w-[220px]"
                         />
                         {row.isDuplicate && (
                           <span className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">

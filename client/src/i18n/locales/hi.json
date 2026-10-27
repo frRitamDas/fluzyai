@@ -1,5 +1,6 @@
 {
   "nav": {
+    "home": "Home",
     "models": "मॉडल",
     "playground": "खेल का मैदान",
     "keys": "चाबियाँ",
@@ -61,7 +62,13 @@
     "emailChanged": "ईमेल सफलतापूर्वक बदला गया।",
     "passwordReset": "पासवर्ड रीसेट हो गया। कृपया साइन इन करें।",
     "resetCodeDockerHint": "Docker में चला रहे हैं? कोड कंटेनर लॉग में है: docker logs <container>।",
-    "desktopSessionFailed": "डैशबोर्ड लोकल सर्वर में साइन इन नहीं कर सका। Fluzy AI बंद करके दोबारा खोलें।"
+    "desktopSessionFailed": "डैशबोर्ड लोकल सर्वर में साइन इन नहीं कर सका। Fluzy AI बंद करके दोबारा खोलें।",
+    "offlineTitle": "Fluzy AI is not responding",
+    "offlineBody": "The dashboard could not reach the server. This is usually momentary — it retries on its own, or use the buttons below.",
+    "offlineReload": "Reload page",
+    "signupClosedTitle": "This dashboard is already claimed",
+    "signupClosedBody": "Each Fluzy AI deployment has one owner account. Sign in with the account you created — extra accounts can be enabled by the operator with FLUZY_ALLOW_SIGNUP=1.",
+    "backToHome": "Back to home"
   },
   "common": {
     "save": "सहेजें",
@@ -1321,5 +1328,20 @@
     "tryConfidence": "{value}% आश्वस्त",
     "tryServedBy": "{model} · {latency} ms",
     "exampleTitle": "उदाहरण अनुरोध"
+  },
+  "onboarding": {
+    "title": "Welcome to Fluzy AI",
+    "subtitle": "Three steps from an empty dashboard to a working endpoint.",
+    "step1Title": "Get the provider keys in place",
+    "step1Body": "Provider keys are shared: the deployment admin adds a free-tier key once and every account can call those models. Hosting this yourself? You are the admin — the Admin panel is where they go.",
+    "step2Title": "Copy your API key",
+    "step2Body": "Your own key authenticates every client you point here. Rotating it affects nobody else — no provider key ever leaves this server.",
+    "step3Title": "Call the endpoint",
+    "step3Body": "Use the base URL below anywhere an OpenAI base URL is accepted, with model \"auto\" to let the router choose.",
+    "copyBaseUrl": "Copy URL",
+    "copied": "API base URL copied",
+    "copyFailed": "Could not copy — select the URL and copy it manually",
+    "openKeys": "Open Keys",
+    "explore": "Explore the dashboard"
   }
 }

@@ -1,5 +1,6 @@
 {
   "nav": {
+    "home": "Home",
     "models": "Modele",
     "playground": "Locul de joacă",
     "keys": "Chei",
@@ -61,7 +62,13 @@
     "emailChanged": "E-mailul a fost schimbat.",
     "passwordReset": "Parola a fost resetată. Autentifică-te.",
     "resetCodeDockerHint": "Rulezi în Docker? Codul se află în jurnalul containerului: docker logs <container>.",
-    "desktopSessionFailed": "Panoul de control nu s-a putut autentifica la serverul local. Închide Fluzy AI și deschide-l din nou."
+    "desktopSessionFailed": "Panoul de control nu s-a putut autentifica la serverul local. Închide Fluzy AI și deschide-l din nou.",
+    "offlineTitle": "Fluzy AI is not responding",
+    "offlineBody": "The dashboard could not reach the server. This is usually momentary — it retries on its own, or use the buttons below.",
+    "offlineReload": "Reload page",
+    "signupClosedTitle": "This dashboard is already claimed",
+    "signupClosedBody": "Each Fluzy AI deployment has one owner account. Sign in with the account you created — extra accounts can be enabled by the operator with FLUZY_ALLOW_SIGNUP=1.",
+    "backToHome": "Back to home"
   },
   "common": {
     "save": "Salvează",
@@ -1321,5 +1328,20 @@
     "tryConfidence": "Încredere {value}%",
     "tryServedBy": "{model} · {latency} ms",
     "exampleTitle": "Exemplu de cerere"
+  },
+  "onboarding": {
+    "title": "Welcome to Fluzy AI",
+    "subtitle": "Three steps from an empty dashboard to a working endpoint.",
+    "step1Title": "Get the provider keys in place",
+    "step1Body": "Provider keys are shared: the deployment admin adds a free-tier key once and every account can call those models. Hosting this yourself? You are the admin — the Admin panel is where they go.",
+    "step2Title": "Copy your API key",
+    "step2Body": "Your own key authenticates every client you point here. Rotating it affects nobody else — no provider key ever leaves this server.",
+    "step3Title": "Call the endpoint",
+    "step3Body": "Use the base URL below anywhere an OpenAI base URL is accepted, with model \"auto\" to let the router choose.",
+    "copyBaseUrl": "Copy URL",
+    "copied": "API base URL copied",
+    "copyFailed": "Could not copy — select the URL and copy it manually",
+    "openKeys": "Open Keys",
+    "explore": "Explore the dashboard"
   }
 }

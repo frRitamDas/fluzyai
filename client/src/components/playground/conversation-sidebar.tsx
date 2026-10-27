@@ -34,6 +34,7 @@ export function ConversationSidebar({
   conversations,
   activeId,
   open,
+  overlay = false,
   onToggle,
   onNew,
   onSelect,
@@ -43,6 +44,14 @@ export function ConversationSidebar({
   conversations: ConversationSummary[]
   activeId: number | null
   open: boolean
+  /**
+   * Phone width: the rail becomes a drawer OVER the transcript instead of a
+   * column that shrinks it. A 240px rail beside a 360px screen leaves no room
+   * for the chat, and the collapsed strip alone would eat an eighth of it.
+   * Closed in this mode the component renders nothing at all, so the transcript
+   * gets the whole width; the page supplies its own open button.
+   */
+  overlay?: boolean
   onToggle: () => void
   onNew: () => void
   onSelect: (id: number) => void
@@ -82,11 +91,30 @@ export function ConversationSidebar({
     if (title && title !== previous?.title) onRename(renamingId, title)
   }
 
+  if (overlay && !open) return null
+
   return (
-    <div
-      className={`relative shrink-0 overflow-hidden border-e bg-card transition-[width] duration-200 ease-out motion-reduce:transition-none ${
-        open ? 'w-60' : 'w-11'
-      }`}
+    <>
+      {overlay && (
+        // A drawer needs a way out that is not "find the tiny X": tapping the
+        // transcript behind it closes it, which is what a phone user tries first.
+        <button
+          type="button"
+          aria-label={t('playgroundSessions.hideSidebar')}
+          onClick={onToggle}
+          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px]"
+        />
+      )}
+      <div
+      className={
+        overlay
+          ? // Drawer: fixed to the inline start edge, full height under the
+            // navbar, above the transcript and its backdrop.
+            'fixed inset-y-0 start-0 z-50 flex w-[min(17rem,85vw)] flex-col border-e bg-card shadow-xl'
+          : `relative shrink-0 overflow-hidden border-e bg-card transition-[width] duration-200 ease-out motion-reduce:transition-none ${
+              open ? 'w-60' : 'w-11'
+            }`
+      }
     >
       <div
         className={`${LAYER} w-11 items-center gap-1 py-3 ${
@@ -114,7 +142,7 @@ export function ConversationSidebar({
       </div>
 
       <div
-        className={`${LAYER} w-60 ${open ? 'visible opacity-100' : 'invisible opacity-0'}`}
+        className={`${LAYER} ${overlay ? 'w-[min(17rem,85vw)]' : 'w-60'} ${open ? 'visible opacity-100' : 'invisible opacity-0'}`}
       >
         {/* Two lines: the collapse control alone on the first, then New chat as
             a proper button spanning the width. No heading — the list explains
@@ -225,6 +253,7 @@ export function ConversationSidebar({
           )}
         </div>
       </div>
-    </div>
+      </div>
+    </>
   )
 }

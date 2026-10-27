@@ -11,7 +11,6 @@ import {
   adminCount,
   isAdminSession,
   listUsers,
-  roleForUser,
   setUserApiAccess,
   setUserDailyLimit,
   setUserRole,

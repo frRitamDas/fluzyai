@@ -1,7 +1,6 @@
 import os from 'os';
 import path from 'path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { Express } from 'express';
 import './env.js';
 import { createApp } from './app.js';
 import { initDb, getDb } from './db/index.js';

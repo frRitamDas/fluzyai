@@ -188,7 +188,7 @@ export default function PremiumPage() {
                   activate.mutate(keyInput.trim())
                 }}
               >
-                <div className="space-y-1.5 flex-1 min-w-[260px]">
+                <div className="w-full min-w-0 flex-1 space-y-1.5 sm:min-w-[260px]">
                   <Label className="text-xs">{t('premium.licenseKey')}</Label>
                   <Input
                     value={keyInput}

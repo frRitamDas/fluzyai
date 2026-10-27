@@ -168,7 +168,7 @@ export function CustomProviderSection({ onAdded }: { onAdded?: () => void } = {}
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-1.5 flex-1 min-w-[240px]">
+        <div className="flex-1 space-y-1.5 min-w-0 sm:min-w-[240px]">
           <Label className="text-xs">{t('keys.customBaseUrl')}</Label>
           <Input
             value={baseUrl}
@@ -200,7 +200,7 @@ export function CustomProviderSection({ onAdded }: { onAdded?: () => void } = {}
             onChange={e => setModel(e.target.value)}
             placeholder={modelPlaceholder}
             rows={customType === 'chat' ? 2 : 1}
-            className="w-[200px] font-mono text-xs"
+            className="w-full font-mono text-xs sm:w-[200px]"
             aria-invalid={attempted && !!modelError}
           />
           {attempted && <FieldError error={modelError} />}
