@@ -195,7 +195,10 @@
             button.id = 'fluzy-boot-reload'
             button.type = 'button'
             button.textContent = 'Reload'
-            button.onclick = reload
+            // addEventListener, not onclick: the CSP sets script-src-attr to
+            // 'none', and a property-assigned handler is the one form of that a
+            // stricter policy could object to. This form is unambiguously allowed.
+            button.addEventListener('click', reload)
             splash.firstChild.appendChild(button)
           }
         }
