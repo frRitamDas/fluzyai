@@ -1,5 +1,7 @@
 import { Component, type ReactNode } from 'react'
 
+import { dismissBootSplash } from '@/lib/boot-splash'
+
 /**
  * The outermost boundary, above every provider.
  *
@@ -24,8 +26,15 @@ export class RootBoundary extends Component<{ children: ReactNode }, RootBoundar
     return { error }
   }
 
+  componentDidMount() {
+    // The tree mounted, so the splash from index.html has done its job.
+    dismissBootSplash()
+  }
+
   componentDidCatch(error: Error) {
     console.error('[dashboard] the app failed to start:', error)
+    // Nothing below this boundary rendered; the card below replaces the splash.
+    dismissBootSplash()
   }
 
   render() {

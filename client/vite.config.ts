@@ -19,6 +19,16 @@ export default defineConfig(({ mode }) => {
         '@': path.resolve(__dirname, './src'),
       },
     },
+    build: {
+      // Vite's default target tracks "widely available" and moves forward with
+      // each release, which silently drops browsers that are still common on
+      // phones: an older Safari or WebView cannot PARSE a bundle built for a
+      // newer baseline, so the script never runs at all and the page stays
+      // empty — indistinguishable from a black screen, with no error a visitor
+      // can act on. Downgrading the syntax costs a little size and is the
+      // difference between "shows an out-of-date page" and "shows nothing".
+      target: ['es2019', 'chrome79', 'edge79', 'firefox72', 'safari13'],
+    },
     server: {
       proxy: {
         // Force IPv4 — on Windows + Node 17+, `localhost` resolves to ::1 first,

@@ -34,9 +34,179 @@
       }
     </script>
     <title>Fluzy AI · Unified LLM Router</title>
+    <!--
+      Boot splash + watchdog.
+
+      The dashboard is a client-rendered app, so anything that stops the bundle
+      from running — a stale cached page pointing at a deleted asset, an older
+      browser that cannot parse the bundle, a provider that throws on mount —
+      used to leave the visitor with an empty #root: the CSS still painted the
+      dark page background, so the site looked like a black screen with no
+      explanation (it shipped that way once already).
+
+      This block is deliberately ES5 and dependency-free (no imports, no CSS
+      variables, no fonts) so it runs even when the app cannot: it paints a small
+      brand + "Loading" splash immediately, remembers the first real error, and
+      after the watchdog delay replaces the splash with a readable failure card
+      and a Reload button. src/main.tsx clears it as soon as React renders.
+    -->
+    <style>
+      #fluzy-boot {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #0b0b0c;
+        color: #e8e8ea;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        z-index: 2147483647;
+      }
+      #fluzy-boot .fluzy-boot__box { text-align: center; padding: 24px; max-width: 34rem; }
+      #fluzy-boot .fluzy-boot__mark {
+        display: inline-block; width: 10px; height: 10px; border-radius: 999px;
+        background: #e8e8ea; margin-right: 8px; vertical-align: middle;
+      }
+      #fluzy-boot .fluzy-boot__name { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+      #fluzy-boot .fluzy-boot__hint { margin-top: 10px; font-size: 13px; opacity: 0.6; }
+      #fluzy-boot .fluzy-boot__error {
+        margin-top: 14px; padding: 10px 12px; border-radius: 10px;
+        background: rgba(255, 255, 255, 0.06); font-family: ui-monospace, Menlo, monospace;
+        font-size: 11.5px; line-height: 1.5; text-align: left; word-break: break-word;
+        white-space: pre-wrap; max-height: 9rem; overflow: auto;
+      }
+      #fluzy-boot button {
+        margin-top: 16px; padding: 8px 16px; border-radius: 8px; cursor: pointer;
+        border: 1px solid rgba(255, 255, 255, 0.22); background: rgba(255, 255, 255, 0.1);
+        color: inherit; font: inherit; font-size: 13px;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
+    <noscript>
+      <div style="padding:24px;font-family:system-ui,sans-serif;color:#e8e8ea;background:#0b0b0c;min-height:100vh">
+        <strong>Fluzy AI needs JavaScript.</strong>
+        <p style="opacity:.7;font-size:14px">This dashboard runs in the browser — enable JavaScript for this site and reload.</p>
+      </div>
+    </noscript>
+    <script>
+      (function () {
+        var splash = document.createElement('div')
+        splash.id = 'fluzy-boot'
+        splash.innerHTML =
+          '<div class="fluzy-boot__box">' +
+          '<div><span class="fluzy-boot__mark"></span><span class="fluzy-boot__name">Fluzy AI</span></div>' +
+          '<div class="fluzy-boot__hint" id="fluzy-boot-hint">Loading…</div>' +
+          '</div>'
+        document.body.appendChild(splash)
+
+        var reported = []
+        window.__FLUZY_BOOTED__ = false
+        window.__FLUZY_BOOT_ERROR__ = null
+
+        function describe(value) {
+          if (!value) return ''
+          if (typeof value === 'string') return value
+          if (value.message) return value.message
+          try {
+            return String(value)
+          } catch (e) {
+            return 'unknown error'
+          }
+        }
+
+        // The first real failure is the useful one; later ones are usually
+        // consequences of it (a failed import makes everything else throw).
+        function note(message) {
+          if (!message) return
+          if (reported.indexOf(message) === -1) reported.push(message)
+          window.__FLUZY_BOOT_ERROR__ = reported.join('\n')
+        }
+
+        window.addEventListener(
+          'error',
+          function (event) {
+            var target = event && event.target
+            if (target && target.tagName === 'SCRIPT') {
+              note('The app bundle failed to load (' + (target.src || 'script') + '). This is usually a stale cached page from an older deploy.')
+              // Repair it before the visitor sees anything: a fresh document
+              // points at the assets that actually exist.
+              if (recoverFromStaleAssets()) return
+              window.__FLUZY_BOOT_FAILED__ && window.__FLUZY_BOOT_FAILED__()
+              return
+            }
+            note(describe(event && (event.message || event.error)))
+          },
+          true,
+        )
+        window.addEventListener('unhandledrejection', function (event) {
+          note(describe(event && (event.reason && (event.reason.message || event.reason))))
+        })
+
+        function reload() {
+          // A plain reload can serve the same broken HTML from cache; the query
+          // string forces a fresh document and fresh asset URLs.
+          var url = window.location.href.split('#')[0]
+          url += (url.indexOf('?') === -1 ? '?' : '&') + 'boot=' + Date.now()
+          window.location.replace(url)
+        }
+
+        // A page cached from an older deploy asks for assets that no longer
+        // exist (Vercel's catch-all answers with index.html, so the module never
+        // parses). That is self-healing: fetch the document again. Once per
+        // session, so a genuinely broken deployment cannot trap the tab in a
+        // reload loop.
+        function recoverFromStaleAssets() {
+          try {
+            if (sessionStorage.getItem('fluzyai.bootRecovery') === '1') return false
+            sessionStorage.setItem('fluzyai.bootRecovery', '1')
+          } catch (e) {
+            return false
+          }
+          reload()
+          return true
+        }
+
+        function fail() {
+          if (window.__FLUZY_BOOTED__ || !splash || !splash.parentNode) return
+          if (window.__FLUZY_BOOT_ERROR__ && /failed to load/.test(window.__FLUZY_BOOT_ERROR__)) {
+            if (recoverFromStaleAssets()) return
+          }
+          var error = window.__FLUZY_BOOT_ERROR__
+          var hint = document.getElementById('fluzy-boot-hint')
+          if (hint) {
+            hint.textContent = 'This page could not start. Reloading almost always fixes it.'
+            hint.style.opacity = '0.75'
+          }
+          if (!document.getElementById('fluzy-boot-error')) {
+            var box = document.createElement('div')
+            box.id = 'fluzy-boot-error'
+            box.className = 'fluzy-boot__error'
+            // No captured error is still worth reporting: "nothing happened"
+            // is the one outcome a visitor cannot act on.
+            box.textContent =
+              error ||
+              'The page did not finish loading. This is usually a stale cached copy — Reload fetches a fresh one.'
+            splash.firstChild.appendChild(box)
+          }
+          if (!document.getElementById('fluzy-boot-reload')) {
+            var button = document.createElement('button')
+            button.id = 'fluzy-boot-reload'
+            button.type = 'button'
+            button.textContent = 'Reload'
+            button.onclick = reload
+            splash.firstChild.appendChild(button)
+          }
+        }
+        window.__FLUZY_BOOT_FAILED__ = fail
+
+        // A failing bundle usually reports immediately; the timer covers the case
+        // where nothing loads and nothing throws (a hung request, an extension
+        // blocking the script, a proxy that truncates the response).
+        window.setTimeout(fail, 9000)
+      })()
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
