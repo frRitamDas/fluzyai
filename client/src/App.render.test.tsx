@@ -114,6 +114,19 @@ it('renders the sign-in form', async () => {
 
 it('renders the not-found page rather than the console', async () => {
   const text = await mount('/ops-test')
-  // Not an admin: the console route does not exist, so its path is a 404.
+  // Not an admin: the console route does not exist, so its path is a 404 —
+  // a miss, not a redirect to the home page, so a guess gives no hint either way.
+  expect(text).toContain('Page not found')
   expect(text).not.toContain('Providers & keys')
+})
+
+it('does not bounce an unknown URL to the home page', async () => {
+  await mount('/definitely-not-a-page')
+  expect(window.location.pathname).toBe('/definitely-not-a-page')
+  expect(container.textContent).toContain('Page not found')
+})
+
+it('still sends a signed-out deep link to the home page', async () => {
+  const text = await mount('/analytics')
+  expect(text).toContain('One API key')
 })

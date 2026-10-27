@@ -3,6 +3,7 @@ import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-r
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowRight, Loader2 } from 'lucide-react'
 import { LandingPage } from '@/pages/LandingPage'
+import NotFoundPage from '@/pages/NotFoundPage'
 import { apiFetch, setToken, UNAUTHORIZED_EVENT, type ApiError } from '@/lib/api'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { FieldError } from '@/components/ui/field-error'
@@ -554,6 +555,34 @@ function SignupClosedPanel() {
  * dashboard page nobody is signed in for should introduce the product, not
  * bounce off a 401.
  */
+/**
+ * The dashboard's own paths. A signed-out visitor who lands on one (an old
+ * bookmark, a link from a build log) is sent to the home page, because there is
+ * a sign-in form waiting for them there.
+ *
+ * Anything else is a URL we do not serve at all, and gets the not-found page
+ * instead of a redirect: silently rewriting a guessed console path to the home
+ * page would confirm it is "a page" rather than a miss.
+ */
+const DASHBOARD_PREFIXES = [
+  '/models',
+  '/keys',
+  '/playground',
+  '/agents',
+  '/analytics',
+  '/logs',
+  '/premium',
+  '/fallback',
+  '/test',
+  '/health',
+]
+
+function PublicCatchAll() {
+  const { pathname } = useLocation()
+  const known = DASHBOARD_PREFIXES.some(prefix => pathname === prefix || pathname.startsWith(`${prefix}/`))
+  return known ? <Navigate to="/" replace /> : <NotFoundPage />
+}
+
 function PublicRoutes({ status, onAuthed }: { status: AuthStatus; onAuthed: () => void }) {
   const location = useLocation()
   // A fresh deployment has no account to sign in with, so /login is the
@@ -590,7 +619,7 @@ function PublicRoutes({ status, onAuthed }: { status: AuthStatus; onAuthed: () =
           )
         }
       />
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<PublicCatchAll />} />
     </Routes>
   )
 }
@@ -610,6 +639,27 @@ export function AuthGate({ children }: { children: ReactNode }) {
     window.addEventListener(UNAUTHORIZED_EVENT, handler)
     return () => window.removeEventListener(UNAUTHORIZED_EVENT, handler)
   }, [refetch])
+
+  // Self-healing while the API is unreachable: a cold serverless instance, a
+  // deploy in flight, or one dropped request all recover on their own. Backs
+  // off so a genuinely down backend is not hammered from every open tab, and
+  // stops after ~30 s of failures so the buttons above stay meaningful.
+  useEffect(() => {
+    if (!isError) return
+    let attempt = 0
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const tick = () => {
+      if (attempt >= 6) return
+      const delay = Math.min(2_000 * 2 ** attempt, 15_000)
+      attempt += 1
+      timer = setTimeout(() => {
+        void refetch()
+        tick()
+      }, delay)
+    }
+    tick()
+    return () => clearTimeout(timer)
+  }, [isError, refetch])
 
   // Desktop self-repair: one attempt at a time, and none after the shell has
   // handed back a session the server still rejects — a broken install shows a
@@ -660,10 +710,22 @@ export function AuthGate({ children }: { children: ReactNode }) {
     )
   }
   if (isError || !data) {
+    // A serverless deployment answers 500 while a cold instance boots, and a
+    // phone on a flaky connection drops the request outright. Both are
+    // transient, so this state retries itself instead of parking the visitor on
+    // an error until they think to reload; the buttons are for the cases where
+    // retrying is not enough.
     return (
       <Centered>
-        <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-xs text-destructive">
-          {t('auth.serverUnreachableBefore')}<code className="font-mono">npm run dev</code>{t('auth.serverUnreachableAfter')}
+        <div role="alert" className="rounded-2xl border bg-card p-6 text-center shadow-sm">
+          <h1 className="text-sm font-semibold">{t('auth.offlineTitle')}</h1>
+          <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">{t('auth.offlineBody')}</p>
+          <div className="mt-4 flex items-center justify-center gap-2">
+            <Button size="sm" onClick={() => void refetch()}>{t('errors.tryAgain')}</Button>
+            <Button size="sm" variant="outline" onClick={() => window.location.reload()}>
+              {t('auth.offlineReload')}
+            </Button>
+          </div>
         </div>
       </Centered>
     )
