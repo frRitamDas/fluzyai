@@ -58,6 +58,9 @@ it('ships a watchdog, an error card and a cache-busting reload', () => {
   // The splash markup and the failure path live in index.html because it has to
   // work when no module executes at all.
   expect(indexHtml).toContain("splash.id = 'fluzy-boot'")
+  // Support/deploy marker: present when the guard actually ran. Its absence on a
+  // live page means the CSP did not carry this script's hash.
+  expect(indexHtml).toContain("setAttribute('data-fluzy-boot', 'armed')")
   expect(indexHtml).toContain('#fluzy-boot')
   expect(indexHtml).toContain('__FLUZY_BOOT_FAILED__')
   expect(indexHtml).toContain('__FLUZY_BOOT_ERROR__')

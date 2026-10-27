@@ -100,6 +100,10 @@
           '<div class="fluzy-boot__hint" id="fluzy-boot-hint">Loading…</div>' +
           '</div>'
         document.body.appendChild(splash)
+        // A marker for support and for the deploy check: if this attribute is
+        // missing on <html>, the guard never ran at all — which is exactly what
+        // a CSP that does not carry its hash looks like from the outside.
+        document.documentElement.setAttribute('data-fluzy-boot', 'armed')
 
         var reported = []
         window.__FLUZY_BOOTED__ = false
