@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
+import { DEFAULT_MIGRATIONS } from '../../../db/migrate/defaults.js';
 import { runMigrations } from '../../../db/migrate/runner.js';
 import { up as legacyBaseline } from '../../../db/migrations/20260101_000000_legacy_baseline.js';
 
@@ -119,7 +120,12 @@ describe('legacy baseline re-run against a post-rename DB (#1603)', () => {
 
     await expect(runMigrations(db, 'up')).resolves.toBeUndefined();
     // No model id appears twice, and the runner recorded the journal.
-    expect(db.prepare('SELECT COUNT(*) AS n FROM migrations').get()).toEqual({ n: 47 });
+    // Every registered migration now has a journal row. Counted from the
+    // registry rather than a literal: this assertion used to say 47 and went
+    // stale (failing CI) the moment two migrations were added.
+    expect(db.prepare('SELECT COUNT(*) AS n FROM migrations').get()).toEqual({
+      n: DEFAULT_MIGRATIONS.length,
+    });
     expect(db.prepare('SELECT COUNT(*) AS n FROM (SELECT platform, model_id FROM models GROUP BY platform, model_id HAVING COUNT(*) > 1)').get()).toEqual({ n: 0 });
   });
 });
